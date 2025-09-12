@@ -1,0 +1,12 @@
+node_modules
+.next
+.turbo
+.vercel
+dist
+coverage
+*.log
+# SQLite dev database artifacts
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm

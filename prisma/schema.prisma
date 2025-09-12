@@ -1,0 +1,93 @@
+// Prisma schema for super-plan (SQLite for local dev)
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Template {
+  id         String         @id @default(cuid())
+  name       String
+  wakeStart  String
+  totalHours Int
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  slots TemplateSlot[]
+}
+
+model TemplateSlot {
+  id          String   @id @default(cuid())
+  templateId  String
+  index       Int
+  title       String
+  desiredMin  Int
+  rigid       Boolean   @default(false)
+  fixedStart  String?
+  tags        String?
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, index])
+}
+
+model Setting {
+  key       String  @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Snippet {
+  id          String   @id @default(cuid())
+  title       String
+  desiredMin  Int
+  rigid       Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Schedule {
+  id         String   @id @default(cuid())
+  templateId String?
+  name       String
+  date       String   // YYYY-MM-DD
+  wakeStart  String
+  totalHours Int
+  createdAt  DateTime @default(now())
+  slots      ScheduleSlot[]
+  events     RunEvent[]
+
+  @@unique([date])
+}
+
+model ScheduleSlot {
+  id           String  @id @default(cuid())
+  scheduleId   String
+  index        Int
+  title        String
+  desiredMin   Int
+  rigid        Boolean @default(false)
+  fixedStart   String?
+  optLen       Int
+  optStart     Int
+  actLen       Int
+  start        Int
+
+  schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  @@index([scheduleId, index])
+}
+
+model RunEvent {
+  id             String   @id @default(cuid())
+  scheduleId     String
+  scheduleSlotId String?
+  action         String   // begin|end|adjust|note
+  at             DateTime
+  payload        String?
+
+  schedule Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  @@index([scheduleId, at])
+}
