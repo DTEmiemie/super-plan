@@ -45,3 +45,14 @@
 - 修改遵循本文件；采用最小、外科手术式补丁，避免大范围重构。
 - 代码变更需同步更新文档与测试；保持公共 API 类型稳定。
 
+### Git/Commit 约定（给 Agent）
+- 提交风格：Conventional Commits（feat/fix/docs/refactor/test/chore/build/ci）。
+- 提交粒度：小而原子；一次提交只做一件事。涉及 schema 变更时与迁移文件同一提交。
+- 何时提交：
+  - 完成一个“可独立验证”的小功能/修复/文档更新后立刻提交。
+  - 若任务包含多个小步骤，使用 plan 标记每步完成后提交一次。
+- 提交信息建议格式：
+  - `feat(<scope>): <简短描述>`（scope 如 today/templates/api/scheduler）
+  - 正文描述动机、影响面与验证方式（必要时）。
+- 不要提交：`node_modules`、`.next`、`prisma/*.db*`、`.env`（仅 `.env.example`）。
+- 分支：按 `feat/<scope>-<desc>` 或 `fix/<scope>-<desc>` 创建并在其上提交（如用户未指定分支，默认在当前分支提交）。
