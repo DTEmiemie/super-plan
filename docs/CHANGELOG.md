@@ -26,6 +26,19 @@
   - 设置持久化至 DB，同时写入 localStorage 并通过 BroadcastChannel 实时广播到 /today；
   - 可配置：顶部状态条、底部汇总条、进度、冲突计数、总期望、压缩比。
 
+## 追加（2025-09-15）
+- 行内拖拽排序与快捷键（模板页、今日页）
+  - 引入 dnd-kit，实现表格行拖拽排序；支持键盘排序与可访问性提升。
+  - 快捷键（焦点在本行任意单元格即可）：
+    - 移动行：Alt+↑ / Alt+↓
+    - 复制本行：Alt+Shift+C
+    - 插入下方：Alt+Shift+N
+    - 插入上方：Alt+Shift+P
+    - 拆分本行：Alt+Shift+S
+  - 连续移动时保持焦点：每次移动后自动将焦点恢复到该行标题输入框，支持连续操作。
+- 设置新增：showHotkeyHint（显示快捷键提示条）
+  - 设置页加入开关；提示条可点击“不再提示”，同时更新 DB 与本地存储。
+
 ## 数据与后端（本地开发用 SQLite）
 - 接入 Prisma + SQLite，新增最小 API：
   - 模型：Template、TemplateSlot、Setting；新增 Schedule、ScheduleSlot、RunEvent（RunEvent 先建表，后续接入事件持久化）。

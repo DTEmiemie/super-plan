@@ -69,6 +69,7 @@ export default function SettingsPage() {
         <Row label="显示冲突计数" prop="showConflictCount" />
         <Row label="显示总期望分钟（与可用对比）" prop="showTotalExpected" />
         <Row label="显示压缩/扩张比（实际/期望）" prop="showCompressionRatio" />
+        <Row label="显示快捷键提示条" prop="showHotkeyHint" />
         <Row label="锁定结束时间（调整起点时保持结束不变）" prop="lockEndTime" />
         <Row label="自动保存到数据库（开发/个人使用场景）" prop="autoSaveToDb" />
       </div>

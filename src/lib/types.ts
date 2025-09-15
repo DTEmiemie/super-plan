@@ -39,6 +39,7 @@ export type UiSettings = {
   showConflictCount: boolean;
   showTotalExpected: boolean;
   showCompressionRatio: boolean;
+  showHotkeyHint: boolean; // 显示快捷键提示条
   lockEndTime: boolean; // 锁定结束时间：调整起点时保持结束不变
   autoSaveToDb: boolean; // 自动保存到数据库（模板/当日）
 };

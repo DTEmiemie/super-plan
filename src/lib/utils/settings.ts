@@ -10,6 +10,7 @@ export function defaultSettings(): UiSettings {
     showConflictCount: true,
     showTotalExpected: false,
     showCompressionRatio: false,
+    showHotkeyHint: true,
     lockEndTime: false,
     autoSaveToDb: false,
   };

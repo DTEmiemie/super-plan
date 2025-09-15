@@ -1,13 +1,33 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { ScheduleTemplate, TemplateSlot, UiSettings } from '@/lib/types';
 import { saveTemplate, sampleTemplate, saveTemplateDraft, loadTemplateDraft, clearTemplateDraft, loadSnippetLibrary, saveSnippetLibrary } from '@/lib/utils/storage';
 import { fetchSnippets, createSnippet, deleteSnippet } from '@/lib/client/api';
 import { createTemplate, fetchTemplates, updateTemplate } from '@/lib/client/api';
-import { defaultSettings, loadSettings } from '@/lib/utils/settings';
+import { defaultSettings, loadSettings, saveSettings } from '@/lib/utils/settings';
+import { saveUiSettings } from '@/lib/client/api';
 import { computeSchedule } from '@/lib/scheduler/compute';
 import { hmToMin, minToHm } from '@/lib/utils/time';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
 
 export default function TemplatesPage() {
   const [template, setTemplate] = useState<ScheduleTemplate>(sampleTemplate());
@@ -36,6 +56,136 @@ export default function TemplatesPage() {
   const [splitOpen, setSplitOpen] = useState<boolean>(false);
   const [splitIndex, setSplitIndex] = useState<number>(-1);
   const [splitValue, setSplitValue] = useState<string>('');
+
+  // DnD sensors (pointer + keyboard)
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function onDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIndex = template.slots.findIndex((s) => s.id === String(active.id));
+    const newIndex = template.slots.findIndex((s) => s.id === String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(template.slots, oldIndex, newIndex);
+    setTemplate({ ...template, slots: next });
+    // 维持焦点在移动的这一行标题
+    if (typeof window !== 'undefined') {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`tpl-title-${String(active.id)}`) as HTMLInputElement | null;
+        el?.focus();
+        try { const len = el?.value.length ?? 0; el?.setSelectionRange(len, len); } catch {}
+      });
+    }
+  }
+
+  // Row component for sortable integration
+  function Row({ s, idx }: { s: TemplateSlot; idx: number }) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id });
+    const style: CSSProperties = { transform: CSS.Transform.toString(transform), transition };
+    function onRowHotkeys(e: React.KeyboardEvent) {
+      // 统一在整行捕获，输入框也可触发；使用 Alt+Shift 组合避免浏览器冲突
+      // 支持 Alt+↑/↓（仅移动），以及 Alt+Shift 组合（全部操作）
+      if (!(e.altKey)) return;
+      const k = e.key;
+      const isMove = k === 'ArrowUp' || k === 'ArrowDown';
+      const needShift = !(isMove); // 非移动操作要求同时按下 Shift
+      if ((isMove || (e.shiftKey && (k === 'c' || k === 'C' || k === 'n' || k === 'N' || k === 'p' || k === 'P' || k === 's' || k === 'S')))) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (k === 'ArrowUp') return moveSlot(idx, -1);
+      if (k === 'ArrowDown') return moveSlot(idx, 1);
+      if (k === 'c' || k === 'C') return duplicateAt(idx);
+      if (k === 'n' || k === 'N') return insertAt(idx, 'below');
+      if (k === 'p' || k === 'P') return insertAt(idx, 'above');
+      if (k === 's' || k === 'S') return openSplit(idx);
+    }
+    return (
+      <tr ref={setNodeRef} style={style} className={isDragging ? 'opacity-70' : ''} onKeyDown={onRowHotkeys}>
+        <td className="border px-2 py-1 align-middle">
+          <button
+            className="px-1 py-0.5 border rounded text-xs cursor-grab active:cursor-grabbing select-none"
+            aria-label="拖拽排序"
+            title="拖拽排序（Space 键进入拖拽；Alt+↑/↓ 移动；Alt+Shift+C 复制；Alt+Shift+N 插入下方；Alt+Shift+P 插入上方；Alt+Shift+S 拆分）"
+            {...attributes}
+            {...listeners}
+            onKeyDown={(e) => {
+              // 手柄上也支持相同快捷键（Alt+Shift 组合）
+              if (!e.altKey) return;
+              const k = e.key;
+              const isMove = k === 'ArrowUp' || k === 'ArrowDown';
+              if (isMove || (e.shiftKey && (k === 'c' || k === 'C' || k === 'n' || k === 'N' || k === 'p' || k === 'P' || k === 's' || k === 'S'))) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+              if (k === 'ArrowUp') return moveSlot(idx, -1);
+              if (k === 'ArrowDown') return moveSlot(idx, 1);
+              if (k === 'c' || k === 'C') return duplicateAt(idx);
+              if (k === 'n' || k === 'N') return insertAt(idx, 'below');
+              if (k === 'p' || k === 'P') return insertAt(idx, 'above');
+              if (k === 's' || k === 'S') return openSplit(idx);
+            }}
+          >↕</button>
+        </td>
+        <td className="border px-2 py-1 whitespace-nowrap">{idx + 1}</td>
+        <td className="border px-2 py-1">
+          <input
+            id={`tpl-title-${s.id}`}
+            className="border rounded px-2 py-1 w-full"
+            value={s.title}
+            autoFocus={focusId === s.id}
+            onChange={(e) => updateSlot(s.id, { title: e.target.value })}
+          />
+        </td>
+        <td className="border px-2 py-1 text-center">
+          <input
+            type="number"
+            className="border rounded px-2 py-1 w-24 text-right"
+            value={s.desiredMin === 0 ? '' : String(s.desiredMin)}
+            onChange={(e) => updateSlot(s.id, { desiredMin: Number(e.target.value || 0) })}
+          />
+        </td>
+        <td className="border px-2 py-1 text-center">
+          <div className="flex items-center justify-center gap-3">
+            <span className="text-xs min-w-4 text-gray-500">{s.rigid ? 'R' : 'F'}</span>
+            <label className="inline-flex items-center gap-1" title="勾选=R（固定时长）；未勾选=F（自动顺延）">
+              <span className="text-xs">R</span>
+              <input
+                type="checkbox"
+                checked={!!s.rigid}
+                onChange={(e) => updateSlot(s.id, { rigid: e.target.checked })}
+              />
+            </label>
+          </div>
+        </td>
+        <td className="border px-2 py-1 whitespace-nowrap relative">
+          <button
+            className="px-2 py-1 border rounded"
+            onClick={() => setMenuOpenId(menuOpenId === s.id ? null : s.id)}
+          >⋯ 操作</button>
+          {menuOpenId === s.id ? (
+            <div
+              className="absolute z-10 mt-1 bg-white border rounded shadow text-sm right-2"
+              onMouseLeave={() => setMenuOpenId(null)}
+            >
+              <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { insertAt(idx, 'above'); setMenuOpenId(null); }}>上方插入</button>
+              <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { insertAt(idx, 'below'); setMenuOpenId(null); }}>下方插入</button>
+              <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { openPaste(idx + 1); setMenuOpenId(null); }}>批量粘贴（下方）</button>
+              <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { openSnippets(idx + 1); setMenuOpenId(null); }}>片段库（下方）</button>
+              <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { openSplit(idx); setMenuOpenId(null); }}>拆分本行</button>
+              <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { duplicateAt(idx); setMenuOpenId(null); }}>复制本行</button>
+              <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { moveSlot(idx, -1); setMenuOpenId(null); }}>上移</button>
+              <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { moveSlot(idx, 1); setMenuOpenId(null); }}>下移</button>
+              <button className="block w-full text-left px-3 py-2 hover:bg-red-50 text-red-600" onClick={() => { removeSlot(s.id); setMenuOpenId(null); }}>删除</button>
+            </div>
+          ) : null}
+        </td>
+      </tr>
+    );
+  }
 
   useEffect(() => {
     (async () => {
@@ -133,9 +283,17 @@ export default function TemplatesPage() {
     const i = index;
     const j = i + dir;
     if (j < 0 || j >= template.slots.length) return;
+    const movedId = template.slots[i]?.id;
     const arr = [...template.slots];
     [arr[i], arr[j]] = [arr[j], arr[i]];
     setTemplate({ ...template, slots: arr });
+    if (movedId && typeof window !== 'undefined') {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`tpl-title-${movedId}`) as HTMLInputElement | null;
+        el?.focus();
+        try { const len = el?.value.length ?? 0; el?.setSelectionRange(len, len); } catch {}
+      });
+    }
   }
 
   function insertAt(index: number, place: 'above' | 'below') {
@@ -328,6 +486,22 @@ export default function TemplatesPage() {
 
   return (
     <div className="space-y-4">
+      {ui.showHotkeyHint ? (
+        <div className="p-2 border rounded bg-gray-50 text-sm flex items-center justify-between">
+          <span>
+            快捷键：Alt+↑/↓ 移动，Alt+Shift+C 复制，Alt+Shift+N 插入下方，Alt+Shift+P 插入上方，Alt+Shift+S 拆分。焦点在本行任意单元格均可使用；也可拖拽首列“↕”。
+          </span>
+          <button
+            className="px-2 py-1 border rounded"
+            onClick={async () => {
+              const next = { ...ui, showHotkeyHint: false };
+              setUi(next);
+              saveSettings(next);
+              try { await saveUiSettings({ showHotkeyHint: false }); } catch {}
+            }}
+          >不再提示</button>
+        </div>
+      ) : null}
       {showDraftPrompt && hasDraft && savedSnapshot ? (
         <div className="p-3 border rounded bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
           <span>检测到草稿，是否恢复未保存的更改？</span>
@@ -424,6 +598,7 @@ export default function TemplatesPage() {
         <table className="min-w-full border text-sm">
           <thead className="bg-gray-50">
             <tr>
+              <th className="border px-2 py-1 text-left w-10">拖</th>
               <th className="border px-2 py-1 text-left">序</th>
               <th className="border px-2 py-1 text-left">标题</th>
               <th className="border px-2 py-1">期望（min）</th>
@@ -439,64 +614,20 @@ export default function TemplatesPage() {
               </th>
             </tr>
           </thead>
-          <tbody>
-            {template.slots.map((s, idx) => (
-              <tr key={s.id}>
-                <td className="border px-2 py-1 whitespace-nowrap">{idx + 1}</td>
-                <td className="border px-2 py-1">
-                  <input
-                    className="border rounded px-2 py-1 w-full"
-                    value={s.title}
-                    autoFocus={focusId === s.id}
-                    onChange={(e) => updateSlot(s.id, { title: e.target.value })}
-                  />
-                </td>
-                <td className="border px-2 py-1 text-center">
-                  <input
-                    type="number"
-                    className="border rounded px-2 py-1 w-24 text-right"
-                    value={s.desiredMin === 0 ? '' : String(s.desiredMin)}
-                    onChange={(e) => updateSlot(s.id, { desiredMin: Number(e.target.value || 0) })}
-                  />
-                </td>
-                <td className="border px-2 py-1 text-center">
-                  <div className="flex items-center justify-center gap-3">
-                    <span className="text-xs min-w-4 text-gray-500">{s.rigid ? 'R' : 'F'}</span>
-                    <label className="inline-flex items-center gap-1" title="勾选=R（固定时长）；未勾选=F（自动顺延）">
-                      <span className="text-xs">R</span>
-                      <input
-                        type="checkbox"
-                        checked={!!s.rigid}
-                        onChange={(e) => updateSlot(s.id, { rigid: e.target.checked })}
-                      />
-                    </label>
-                  </div>
-                </td>
-                <td className="border px-2 py-1 whitespace-nowrap relative">
-                  <button
-                    className="px-2 py-1 border rounded"
-                    onClick={() => setMenuOpenId(menuOpenId === s.id ? null : s.id)}
-                  >⋯ 操作</button>
-                  {menuOpenId === s.id ? (
-                    <div
-                      className="absolute z-10 mt-1 bg-white border rounded shadow text-sm right-2"
-                      onMouseLeave={() => setMenuOpenId(null)}
-                    >
-                      <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { insertAt(idx, 'above'); setMenuOpenId(null); }}>上方插入</button>
-                      <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { insertAt(idx, 'below'); setMenuOpenId(null); }}>下方插入</button>
-                      <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { openPaste(idx + 1); setMenuOpenId(null); }}>批量粘贴（下方）</button>
-                      <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { openSnippets(idx + 1); setMenuOpenId(null); }}>片段库（下方）</button>
-                      <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { openSplit(idx); setMenuOpenId(null); }}>拆分本行</button>
-                      <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { duplicateAt(idx); setMenuOpenId(null); }}>复制本行</button>
-                      <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { moveSlot(idx, -1); setMenuOpenId(null); }}>上移</button>
-                      <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { moveSlot(idx, 1); setMenuOpenId(null); }}>下移</button>
-                      <button className="block w-full text-left px-3 py-2 hover:bg-red-50 text-red-600" onClick={() => { removeSlot(s.id); setMenuOpenId(null); }}>删除</button>
-                    </div>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={onDragEnd}
+          >
+            <SortableContext items={template.slots.map(s => s.id)} strategy={verticalListSortingStrategy}>
+              <tbody>
+                {template.slots.map((s, idx) => (
+                  <Row key={s.id} s={s} idx={idx} />
+                ))}
+              </tbody>
+            </SortableContext>
+          </DndContext>
         </table>
       </div>
 
