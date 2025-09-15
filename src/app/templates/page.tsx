@@ -532,6 +532,15 @@ export default function TemplatesPage() {
       const saved = await updateTemplate(template.id, withIndex);
       setTemplate(saved);
       setSavedSnapshot(saved);
+      // 同步更新下拉列表中的名称等信息
+      setTplList((prev) => {
+        const idx = prev.findIndex((t) => t.id === saved.id);
+        if (idx < 0) return prev;
+        const next = prev.slice();
+        next[idx] = saved;
+        return next;
+      });
+      setSelectedId(saved.id);
       saveTemplate(saved);
       clearTemplateDraft(template.id);
       setHasDraft(false);
