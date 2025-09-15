@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
+import Link from 'next/link';
 import { computeSchedule } from '@/lib/scheduler/compute';
 import { DaySchedule, ScheduleTemplate, TemplateSlot, UiSettings } from '@/lib/types';
 import { saveTemplate, sampleTemplate, saveScheduleDraft, loadScheduleDraft, clearScheduleDraft, loadSnippetLibrary } from '@/lib/utils/storage';
@@ -429,6 +430,11 @@ export default function TodayPage() {
         </div>
       ) : null}
       <h1 className="text-xl font-semibold">今日执行（可编辑表格）</h1>
+      <div className="text-sm text-gray-600 -mt-2 mb-2">
+        使用模板：<span className="font-medium">{working.name || '默认模板'}</span>
+        <span className="ml-1 text-gray-500">（当前默认）</span>
+        <Link href="/templates" className="ml-3 text-gray-700 underline-offset-2 hover:underline">管理模板</Link>
+      </div>
       {showDraftPrompt ? (
         <div className="p-3 border rounded bg-amber-50 text-sm text-amber-800 flex items-center justify-between">
           <span>检测到当日草稿，是否恢复未保存的更改？</span>

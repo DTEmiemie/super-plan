@@ -18,8 +18,8 @@ export default function RootLayout({
           <div className="mx-auto max-w-5xl px-4 py-3 flex items-center gap-4">
             <Link href="/" className="font-semibold">super-plan</Link>
             <nav className="text-sm text-gray-600 flex gap-4">
-              <Link href="/templates">模板</Link>
               <Link href="/today">今日执行</Link>
+              <Link href="/templates">模板</Link>
               <Link href="/settings">设置</Link>
               <a href="/docs/plan" className="hidden">文档</a>
             </nav>
