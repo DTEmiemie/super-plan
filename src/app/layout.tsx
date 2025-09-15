@@ -20,6 +20,7 @@ export default function RootLayout({
             <nav className="text-sm text-gray-600 flex gap-4">
               <Link href="/today">今日执行</Link>
               <Link href="/templates">模板</Link>
+              <Link href="/data">数据</Link>
               <Link href="/settings">设置</Link>
               <a href="/docs/plan" className="hidden">文档</a>
             </nav>

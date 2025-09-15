@@ -54,6 +54,8 @@ export default function TodayPage() {
   const saveTimer = (typeof window !== 'undefined') ? (window as any) : {};
   const [focusId, setFocusId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [tplList, setTplList] = useState<ScheduleTemplate[]>([]);
+  const [selectedTplId, setSelectedTplId] = useState<string>('');
   const [pasteOpen, setPasteOpen] = useState<boolean>(false);
   const [pasteText, setPasteText] = useState<string>('');
   const [pasteErrors, setPasteErrors] = useState<string[]>([]);
@@ -209,21 +211,27 @@ export default function TodayPage() {
       try {
         const list = await fetchTemplates();
         if (list.length > 0) {
+          setTplList(list);
           const t = list[0];
           const w = { id: t.id, name: t.name, wakeStart: t.wakeStart, totalHours: t.totalHours, slots: t.slots };
           setWorking(w);
           setSavedSnapshot(w);
+          setSelectedTplId(t.id);
         } else {
           const created = await createTemplate(sampleTemplate());
+          setTplList([created]);
           const w = { id: created.id, name: created.name, wakeStart: created.wakeStart, totalHours: created.totalHours, slots: created.slots };
           setWorking(w);
           setSavedSnapshot(w);
+          setSelectedTplId(created.id);
         }
       } catch (e) {
         const t = sampleTemplate();
         const w = { id: t.id, name: t.name, wakeStart: t.wakeStart, totalHours: t.totalHours, slots: t.slots };
         setWorking(w);
         setSavedSnapshot(w);
+        setTplList([t]);
+        setSelectedTplId(t.id);
       }
       setUi(loadSettings());
       // 草稿提示（按日期）
@@ -233,6 +241,13 @@ export default function TodayPage() {
       if (draft) setShowDraftPrompt(true);
     })();
   }, []);
+
+  function replaceWorkingFromTemplate(tpl: ScheduleTemplate) {
+    const w = { id: tpl.id, name: tpl.name, wakeStart: tpl.wakeStart, totalHours: tpl.totalHours, slots: tpl.slots };
+    setWorking(w);
+    setSavedSnapshot(w);
+    setNowStart('');
+  }
 
   // 实时同步设置：storage 事件（跨标签页）与 BroadcastChannel（同页不同路由）
   useEffect(() => {
@@ -430,9 +445,45 @@ export default function TodayPage() {
         </div>
       ) : null}
       <h1 className="text-xl font-semibold">今日执行（可编辑表格）</h1>
-      <div className="text-sm text-gray-600 -mt-2 mb-2">
-        使用模板：<span className="font-medium">{working.name || '默认模板'}</span>
-        <span className="ml-1 text-gray-500">（当前默认）</span>
+      <div className="text-sm text-gray-600 -mt-2 mb-2 flex flex-wrap items-center gap-2">
+        <span>
+          使用模板：<span className="font-medium">{working.name || '默认模板'}</span>
+          {(() => {
+            const isDefault = selectedTplId && tplList.length > 0 && selectedTplId === tplList[0]?.id;
+            return <span className="ml-1 text-gray-500">（{isDefault ? '默认' : '已切换'}）</span>;
+          })()}
+        </span>
+        {tplList.length > 0 ? (
+          <>
+            <span className="text-gray-400">·</span>
+            <label className="inline-flex items-center gap-2">
+              <span>切换模板</span>
+              <select
+                className="border rounded px-2 py-1"
+                value={selectedTplId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedTplId(id);
+                  const target = tplList.find(t => t.id === id);
+                  if (!target) return;
+                  // 简单确认：若与初始快照不同，提示覆盖
+                  try {
+                    const changed = savedSnapshot && JSON.stringify(working) !== JSON.stringify(savedSnapshot);
+                    if (changed) {
+                      const ok = window.confirm('切换模板将覆盖当前今日表格内容（本地草稿已自动保存）。是否继续？');
+                      if (!ok) return;
+                    }
+                  } catch {}
+                  replaceWorkingFromTemplate(target);
+                }}
+              >
+                {tplList.map(t => (
+                  <option key={t.id} value={t.id}>{t.name || '未命名模板'}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        ) : null}
         <Link href="/templates" className="ml-3 text-gray-700 underline-offset-2 hover:underline">管理模板</Link>
       </div>
       {showDraftPrompt ? (
