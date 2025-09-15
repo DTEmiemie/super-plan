@@ -5,6 +5,7 @@ node_modules
 dist
 coverage
 *.log
+*.tsbuildinfo
 # SQLite dev database artifacts (any depth)
 prisma/**/*.db
 prisma/**/*.db-journal
