@@ -26,6 +26,11 @@ export async function updateTemplate(id: string, tpl: ScheduleTemplate): Promise
   return res.json();
 }
 
+export async function deleteTemplate(id: string): Promise<void> {
+  const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete template');
+}
+
 // Settings API
 export type UiSettingsDto = Partial<UiSettings>;
 

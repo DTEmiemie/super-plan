@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ScheduleTemplate, TemplateSlot, UiSettings } from '@/lib/types';
 import { saveTemplate, sampleTemplate, saveTemplateDraft, loadTemplateDraft, clearTemplateDraft, loadSnippetLibrary, saveSnippetLibrary } from '@/lib/utils/storage';
-import { fetchSnippets, createSnippet, deleteSnippet } from '@/lib/client/api';
+import { fetchSnippets, createSnippet, deleteSnippet, deleteTemplate } from '@/lib/client/api';
 import { createTemplate, fetchTemplates, updateTemplate } from '@/lib/client/api';
 import { defaultSettings, loadSettings, saveSettings } from '@/lib/utils/settings';
 import { saveUiSettings } from '@/lib/client/api';
@@ -32,6 +32,8 @@ import { CSS } from '@dnd-kit/utilities';
 export default function TemplatesPage() {
   const [template, setTemplate] = useState<ScheduleTemplate>(sampleTemplate());
   const [ui, setUi] = useState<UiSettings>(defaultSettings());
+  const [tplList, setTplList] = useState<ScheduleTemplate[]>([]);
+  const [selectedId, setSelectedId] = useState<string>('');
   const [endEdit, setEndEdit] = useState<string>('');
   const [endEditing, setEndEditing] = useState<boolean>(false);
   const [savedSnapshot, setSavedSnapshot] = useState<ScheduleTemplate | null>(null);
@@ -192,8 +194,10 @@ export default function TemplatesPage() {
       try {
         const list = await fetchTemplates();
         if (list.length > 0) {
+          setTplList(list);
           setTemplate(list[0]);
           setSavedSnapshot(list[0]);
+          setSelectedId(list[0].id);
           // 草稿提示
           const draft = loadTemplateDraft(list[0].id);
           if (draft) {
@@ -202,16 +206,81 @@ export default function TemplatesPage() {
           }
         } else {
           const created = await createTemplate(sampleTemplate());
+          setTplList([created]);
           setTemplate(created);
           setSavedSnapshot(created);
+          setSelectedId(created.id);
         }
       } catch (e) {
         // fallback to local sample
-        setTemplate(sampleTemplate());
+        const t = sampleTemplate();
+        setTemplate(t);
+        setTplList([t]);
+        setSelectedId(t.id);
       }
       setUi(loadSettings());
     })();
   }, []);
+
+  function switchTo(t: ScheduleTemplate) {
+    setTemplate(t);
+    setSavedSnapshot(t);
+    setSelectedId(t.id);
+    // 切换后检查草稿
+    const draft = loadTemplateDraft(t.id);
+    if (draft) { setHasDraft(true); setShowDraftPrompt(true); } else { setHasDraft(false); setShowDraftPrompt(false); }
+  }
+
+  async function onCreateNew() {
+    const payload: Partial<ScheduleTemplate> = {
+      name: '新模板',
+      wakeStart: '07:00',
+      totalHours: 16,
+      slots: [],
+    } as any;
+    try {
+      const created = await createTemplate(payload);
+      const next = [...tplList, created];
+      setTplList(next);
+      switchTo(created);
+    } catch (e) {
+      alert('创建模板失败');
+    }
+  }
+
+  async function onDuplicate() {
+    try {
+      const withIndex: any = {
+        name: `${template.name || '模板'}（副本）`,
+        wakeStart: template.wakeStart,
+        totalHours: template.totalHours,
+        slots: template.slots.map((s, i) => ({ title: s.title, desiredMin: s.desiredMin, rigid: !!s.rigid, fixedStart: s.fixedStart ?? null, tags: s.tags ?? null, index: i })),
+      };
+      const created = await createTemplate(withIndex);
+      const next = [...tplList, created];
+      setTplList(next);
+      switchTo(created);
+    } catch (e) {
+      console.error(e);
+      alert('复制失败，请稍后再试');
+    }
+  }
+
+  async function onDeleteCurrent() {
+    if (tplList.length <= 1) { alert('至少保留一个模板'); return; }
+    const ok = window.confirm(`确定删除模板「${template.name}」？此操作不可撤销。`);
+    if (!ok) return;
+    try {
+      await deleteTemplate(template.id);
+      clearTemplateDraft(template.id);
+      const next = tplList.filter(t => t.id !== template.id);
+      setTplList(next);
+      switchTo(next[0]);
+    } catch (e) {
+      console.error(e);
+      alert('删除失败，请检查控制台');
+    }
+  }
 
   // 开始时间自动顺延（基于实际分钟），无需手动编辑。
 
@@ -525,6 +594,42 @@ export default function TemplatesPage() {
         </div>
       ) : null}
       <h1 className="text-xl font-semibold">模板编辑</h1>
+      <div className="flex flex-wrap items-end gap-3 text-sm">
+        <label className="flex items-center gap-2">
+          <span>当前模板</span>
+          <select
+            className="border rounded px-2 py-1"
+            value={selectedId}
+            onChange={(e) => {
+              const target = tplList.find(t => t.id === e.target.value);
+              if (!target) return;
+              if (dirty) {
+                const ok = window.confirm('切换模板将丢弃未保存的更改（草稿已自动保存）。是否继续？');
+                if (!ok) { setSelectedId(template.id); return; }
+              }
+              switchTo(target);
+            }}
+          >
+            {tplList.map(t => (
+              <option key={t.id} value={t.id}>{t.name || '未命名模板'}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2">
+          <span>名称</span>
+          <input
+            className="border rounded px-2 py-1"
+            value={template.name}
+            onChange={(e) => setTemplate({ ...template, name: e.target.value })}
+            placeholder="模板名称"
+          />
+        </label>
+        <div className="flex items-center gap-2">
+          <button className="px-2 py-1 border rounded" onClick={onCreateNew}>新建模板</button>
+          <button className="px-2 py-1 border rounded" onClick={onDuplicate}>复制为新模板</button>
+          <button className="px-2 py-1 border rounded text-red-600" onClick={onDeleteCurrent}>删除模板</button>
+        </div>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <label className="text-sm text-gray-700 flex flex-col gap-1">
           起点（HH:mm）
