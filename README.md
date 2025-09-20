@@ -39,6 +39,20 @@
 - 可选：勾选 `Require linear history`、`Dismiss stale pull request approvals` 以提升流程稳健性。
 - 保存规则后，未通过 CI 的 PR 将无法合并到 `main`，也禁止直接向 `main` 强推（如启用相关选项）。
 
+## 个人开发推荐流（单分支直推）
+- 适用：单人项目、你本地会先跑通再推代码。
+- 建议配置（已为本仓库启用）：
+  - 线性历史：开启（便于回滚与定位问题）。
+  - 禁止强推/删除：开启（避免误操作改写历史）。
+  - 必需 PR / 必需状态检查：关闭（直推 `main` 不被拦，CI 作为事后复验）。
+- 日常步骤：
+  - 本地自检：`npm run lint && npm run test -- --run && npm run build`
+  - 推送：`git push origin main`
+  - CI 会在远端自动跑一遍；如有红灯，修完再推一次即可。
+- 可选增强：
+  - 本地 pre-push 钩子（自动自检）：将 `npm run lint && npm run test -- --run && npm run build` 写入 `.git/hooks/pre-push` 并赋可执行权限；紧急时可 `--no-verify` 跳过。
+  - 上线（手动 git pull）：服务器执行 `git pull --ff-only && npm ci && npx prisma migrate deploy && npm run build`，用 PM2/systemd 重启。
+
 ## 快捷键与拖拽排序（新）
 - 拖拽排序：表格首列“↕”手柄可拖拽上下重排。
 - 键盘快捷键（焦点在该行任意单元格即可）：
