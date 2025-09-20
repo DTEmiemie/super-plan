@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+## 通用设定
+保持使用中文回复 Keep responding with Chinese
+
 ## 项目结构与模块组织
 - `src/app` — Next.js 路由（App Router）与页面。
 - `src/components` — 可复用 UI 组件（Tailwind）。
