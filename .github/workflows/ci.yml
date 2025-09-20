@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CI: true
+      PRISMA_HIDE_UPDATE_MESSAGE: 1
+      # 仅用于生成 Prisma Client 与通过预检；不执行迁移
+      DATABASE_URL: file:./prisma/dev.db
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci
+
+      - name: Type Check (tsc)
+        run: npm run lint
+
+      - name: Unit Tests (Vitest)
+        run: npm run test -- --run
+
+      - name: Build (Next.js)
+        run: npm run build
+
