@@ -30,6 +30,15 @@
 - CI 环境变量：`DATABASE_URL=file:./prisma/dev.db`（仅用于生成 Prisma Client 与通过预检，不做迁移）。
 - 首个 smoke 测试见 `tests/smoke.test.ts`，可据此逐步补充真实用例。
 
+## 主分支保护（建议开启）
+- 打开 GitHub 仓库页面 → `Settings` → `Branches`。
+- 在 `Branch protection rules` 中点击 `Add rule`。
+- `Branch name pattern` 填写：`main`。
+- 勾选 `Require status checks to pass before merging`，并在列表中勾选 `CI` 工作流。
+- 可选：勾选 `Require pull request reviews before merging`（要求至少 1 次代码评审）。
+- 可选：勾选 `Require linear history`、`Dismiss stale pull request approvals` 以提升流程稳健性。
+- 保存规则后，未通过 CI 的 PR 将无法合并到 `main`，也禁止直接向 `main` 强推（如启用相关选项）。
+
 ## 快捷键与拖拽排序（新）
 - 拖拽排序：表格首列“↕”手柄可拖拽上下重排。
 - 键盘快捷键（焦点在该行任意单元格即可）：
