@@ -1,5 +1,7 @@
 # super-plan
 
+[![CI](https://github.com/DTEmiemie/super-plan/actions/workflows/ci.yml/badge.svg)](https://github.com/DTEmiemie/super-plan/actions/workflows/ci.yml)
+
 面向 SuperMemo「Plan」功能的现代化实现与演进规划。以 Next.js（App Router）+ TypeScript 为前端基础，调度器核心保持纯函数（不做 I/O 与 `Date.now()`），时间计算优先 `date-fns`，数据层建议 Prisma（开发期 SQLite）。
 
 - 功能与算法设计文档：见 `docs/plan.md`
@@ -21,6 +23,12 @@
 - `scripts` — 维护与一次性脚本
 
 更多规范与命令参见 `AGENTS.md`。
+
+## 测试与 CI
+- 本地测试：`npm run test -- --run`（Vitest；测试文件放在 `tests/**/*.test.ts(x)`）。
+- 已启用最小 CI（GitHub Actions）：对 push/PR 自动执行 `npm ci → tsc（lint）→ vitest（--run）→ next build`。
+- CI 环境变量：`DATABASE_URL=file:./prisma/dev.db`（仅用于生成 Prisma Client 与通过预检，不做迁移）。
+- 首个 smoke 测试见 `tests/smoke.test.ts`，可据此逐步补充真实用例。
 
 ## 快捷键与拖拽排序（新）
 - 拖拽排序：表格首列“↕”手柄可拖拽上下重排。

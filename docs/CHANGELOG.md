@@ -39,6 +39,16 @@
 - 设置新增：showHotkeyHint（显示快捷键提示条）
   - 设置页加入开关；提示条可点击“不再提示”，同时更新 DB 与本地存储。
 
+## 追加（2025-09-20）
+- CI 与工程
+  - 新增最小 CI（GitHub Actions）：push/PR 自动执行 `npm ci → tsc → vitest(--run) → next build`。
+  - 在 `tests/` 增加 `smoke.test.ts`，避免“无测试时 CI 失败”，为后续用例提供模板。
+  - 新增 `.gitattributes`：统一换行（LF）并标记常见二进制为 `binary`。
+  - 仓库级 Git 优化：`fetch.prune=true`、`push.autoSetupRemote=true`。
+- 文档
+  - `CONTRIBUTING.md` 增补 Deploy Key/SSH 别名示例与团队约定。
+  - README 增加 CI 徽章与“测试与 CI”说明。
+
 ## 数据与后端（本地开发用 SQLite）
 - 接入 Prisma + SQLite，新增最小 API：
   - 模型：Template、TemplateSlot、Setting；新增 Schedule、ScheduleSlot、RunEvent（RunEvent 先建表，后续接入事件持久化）。

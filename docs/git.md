@@ -34,3 +34,22 @@
 - 纯函数约束的算法模块（scheduler）需保持可测试与可复现；避免直接读时间与 I/O
 - 对用户影响大的交互，优先提供设置开关（如“自动保存到数据库”）
 - 重要变更请记录到 `docs/CHANGELOG.md`
+
+## CI 工作流与分支保护（新增）
+- 已启用最小 CI（GitHub Actions，文件：`.github/workflows/ci.yml`）。
+- 触发：`push`、`pull_request`；步骤：`npm ci → tsc（lint）→ vitest（--run）→ next build`。
+- CI 仅为通过预检而设置 `DATABASE_URL=file:./prisma/dev.db`，不执行迁移变更。
+- 建议在仓库设置开启主分支保护：合并前需 CI 通过、禁止 force-push 到 `main`。
+
+## 仓库级 Git 优化（已启用）
+- `fetch.prune=true`：`git fetch` 时自动清理远端已删除的分支，避免堆积“幽灵分支”。
+- `push.autoSetupRemote=true`：首次推送新分支时自动建立追踪关系，后续可直接 `git push/pull`。
+
+## 换行与二进制文件规范（.gitattributes）
+- 已添加 `.gitattributes`：`* text=auto eol=lf`，统一使用 LF；常见图片/字体/压缩包标记为 `binary`。
+- 如需在历史仓库上进行换行重归一化（可能产生较多 diff），请显式执行：
+  - `git add --renormalize . && git commit -m "chore(git): renormalize line endings"`
+
+## SSH/Deploy Key（与权限）
+- 本仓库采用仓库级 Deploy Key（SSH 别名 `github.com-repo`）。
+- 说明与示例见 `CONTRIBUTING.md` 的“Git/SSH 与 Deploy Key”小节（含 `~/.ssh/config` 片段与备选 `core.sshCommand`）。
