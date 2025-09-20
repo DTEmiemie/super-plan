@@ -34,6 +34,24 @@
   - 迁移：如涉及 `prisma/schema.prisma`，请附迁移说明与本地验证步骤
   - 测试：说明验证方式；如增改测试请说明覆盖点
 
+## Git/SSH 与 Deploy Key
+- 本仓库通过仓库级 Deploy Key 访问，推荐使用自定义 SSH Host `github.com-repo` 绑定专用私钥，避免误用个人 Key。
+- 远程地址示例：`git@github.com-repo:DTEmiemie/super-plan.git`
+- 本机 `~/.ssh/config` 示例：
+  
+  ```
+  Host github.com-repo
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_super_plan
+    IdentitiesOnly yes
+  ```
+
+- 备选（保持标准 github.com 但仍使用该 Deploy Key）：在仓库内设置：
+  - `git config --local core.sshCommand "ssh -i ~/.ssh/id_ed25519_super_plan -o IdentitiesOnly=yes"`
+
+- 团队约定：请勿随意改动远程为 `github.com`，或切换为个人 SSH Key；如确需调整，请在 PR 说明动机与影响。
+
 ## 变更要求
 - 调度核心保持纯函数：不得进行 I/O 或直接调用 `Date.now()`；通过参数注入上下文
 - UI 改动遵循 Tailwind 规范；避免内联 style
