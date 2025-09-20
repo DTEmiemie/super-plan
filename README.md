@@ -50,7 +50,10 @@
   - 推送：`git push origin main`
   - CI 会在远端自动跑一遍；如有红灯，修完再推一次即可。
 - 可选增强：
-  - 本地 pre-push 钩子（自动自检）：将 `npm run lint && npm run test -- --run && npm run build` 写入 `.git/hooks/pre-push` 并赋可执行权限；紧急时可 `--no-verify` 跳过。
+  - 本地 pre-push 钩子（自动自检）：
+    - 安装：`cp scripts/git-hooks/pre-push.sh .git/hooks/pre-push && chmod +x .git/hooks/pre-push`
+    - 跳过：`git push --no-verify`（跳过所有本地钩子）
+    - 说明：Git 钩子不随仓库传播（只作用于当前克隆）；如换机器，请按上面命令安装一次。
   - 上线（手动 git pull）：服务器执行 `git pull --ff-only && npm ci && npx prisma migrate deploy && npm run build`，用 PM2/systemd 重启。
 
 ## 快捷键与拖拽排序（新）
