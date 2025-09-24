@@ -749,12 +749,11 @@ export default function TodayPage() {
       ) : null}
 
       <div className="flex gap-3">
-        <button className="px-3 py-2 rounded bg-black text-white" onClick={saveAsTemplate}>保存为模板</button>
         <button
-          className="px-3 py-2 rounded border"
+          className="px-3 py-2 rounded bg-black text-white"
           onClick={async () => {
             try {
-              // 保存当日计划到数据库
+              // 保存当日计划到数据库（主操作）
               const tpl: ScheduleTemplate = {
                 id: working.id,
                 name: working.name,
@@ -766,10 +765,12 @@ export default function TodayPage() {
               alert('已保存当日计划');
             } catch (e) {
               console.error(e);
-              alert('保存失败，请检查控制台');
+              const msg = e instanceof Error ? e.message : '保存失败';
+              alert(msg);
             }
           }}
         >保存当日计划</button>
+        <button className="px-3 py-2 rounded border" onClick={saveAsTemplate}>保存为模板</button>
         {dirty ? <span className="text-sm text-blue-700">未保存更改（草稿已自动保存）</span> : null}
         {nowStart && (
           <button className="px-3 py-2 rounded border" onClick={() => setNowStart('')}>重置起点</button>
