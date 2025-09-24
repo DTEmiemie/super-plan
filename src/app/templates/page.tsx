@@ -9,7 +9,7 @@ import { createTemplate, fetchTemplates, updateTemplate } from '@/lib/client/api
 import { defaultSettings, loadSettings, saveSettings } from '@/lib/utils/settings';
 import { saveUiSettings } from '@/lib/client/api';
 import { computeSchedule } from '@/lib/scheduler/compute';
-import { hmToMin, minToHm } from '@/lib/utils/time';
+import { hmToMin, minToHm, formatClock } from '@/lib/utils/time';
 import {
   DndContext,
   closestCenter,
@@ -115,7 +115,6 @@ export default function TemplatesPage() {
             {...attributes}
             {...listeners}
             onKeyDown={(e) => {
-              // 手柄上也支持相同快捷键（Alt+Shift 组合）
               if (!e.altKey) return;
               const k = e.key;
               const isMove = k === 'ArrowUp' || k === 'ArrowDown';
@@ -133,6 +132,24 @@ export default function TemplatesPage() {
           >↕</button>
         </td>
         <td className="border px-2 py-1 whitespace-nowrap">{idx + 1}</td>
+        <td className="border px-2 py-1 text-center">
+          <div className="flex items-center justify-center gap-3">
+            <span className="text-xs min-w-4 text-gray-500">{s.rigid ? 'R' : 'F'}</span>
+            <label className="inline-flex items-center gap-1" title="勾选=R（固定时长）；未勾选=F（自动顺延）">
+              <span className="text-xs">R</span>
+              <input type="checkbox" checked={!!s.rigid} onChange={(e) => updateSlot(s.id, { rigid: e.target.checked })} />
+            </label>
+          </div>
+        </td>
+        <td className="border px-2 py-1 text-center">
+          <input
+            className="border rounded px-2 py-1 w-24 text-center"
+            value={s.fixedStart ?? ''}
+            placeholder={formatClock(schedule.slots[idx]?.start ?? 0)}
+            onChange={(e) => updateSlot(s.id, { fixedStart: e.target.value || undefined })}
+            disabled={!!s.rigid}
+          />
+        </td>
         <td className="border px-2 py-1">
           <input
             id={`tpl-title-${s.id}`}
@@ -150,29 +167,17 @@ export default function TemplatesPage() {
             onChange={(e) => updateSlot(s.id, { desiredMin: Number(e.target.value || 0) })}
           />
         </td>
-        <td className="border px-2 py-1 text-center">
-          <div className="flex items-center justify-center gap-3">
-            <span className="text-xs min-w-4 text-gray-500">{s.rigid ? 'R' : 'F'}</span>
-            <label className="inline-flex items-center gap-1" title="勾选=R（固定时长）；未勾选=F（自动顺延）">
-              <span className="text-xs">R</span>
-              <input
-                type="checkbox"
-                checked={!!s.rigid}
-                onChange={(e) => updateSlot(s.id, { rigid: e.target.checked })}
-              />
-            </label>
-          </div>
-        </td>
+        <td className="border px-2 py-1 text-right">{Math.round(schedule.slots[idx]?.actLen ?? 0)}</td>
+        <td className="border px-2 py-1 text-right">{Math.round(schedule.slots[idx]?.optLen ?? 0)}</td>
+        <td className="border px-2 py-1 text-right">{Math.round((schedule.slots[idx]?.percent ?? 0) * 100)}</td>
+        <td className="border px-2 py-1 text-right">{Math.round(schedule.slots[idx]?.delay ?? 0)}</td>
         <td className="border px-2 py-1 whitespace-nowrap relative">
           <button
             className="px-2 py-1 border rounded"
             onClick={() => setMenuOpenId(menuOpenId === s.id ? null : s.id)}
           >⋯ 操作</button>
           {menuOpenId === s.id ? (
-            <div
-              className="absolute z-10 mt-1 bg-white border rounded shadow text-sm right-2"
-              onMouseLeave={() => setMenuOpenId(null)}
-            >
+            <div className="absolute z-10 mt-1 bg-white border rounded shadow text-sm right-2" onMouseLeave={() => setMenuOpenId(null)}>
               <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { insertAt(idx, 'above'); setMenuOpenId(null); }}>上方插入</button>
               <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { insertAt(idx, 'below'); setMenuOpenId(null); }}>下方插入</button>
               <button className="block w-full text-left px-3 py-2 hover:bg-gray-50" onClick={() => { openPaste(idx + 1); setMenuOpenId(null); }}>批量粘贴（下方）</button>
@@ -283,6 +288,8 @@ export default function TemplatesPage() {
   }
 
   // 开始时间自动顺延（基于实际分钟），无需手动编辑。
+  // 模板页内联“预览”计算，保持与今日页一致的列顺序与显示。
+  const schedule = useMemo(() => computeSchedule({ template }), [template]);
 
   const totalDesired = useMemo(
     () => template.slots.reduce((acc, s) => acc + s.desiredMin, 0),
@@ -714,9 +721,14 @@ export default function TemplatesPage() {
             <tr>
               <th className="border px-2 py-1 text-left w-10">拖</th>
               <th className="border px-2 py-1 text-left">序</th>
+              <th className="border px-2 py-1">F / R</th>
+              <th className="border px-2 py-1">开始（预估）</th>
               <th className="border px-2 py-1 text-left">标题</th>
               <th className="border px-2 py-1">期望（min）</th>
-              <th className="border px-2 py-1">F / R</th>
+              <th className="border px-2 py-1">实际（预估）</th>
+              <th className="border px-2 py-1">最优（min）</th>
+              <th className="border px-2 py-1">达成（%）</th>
+              <th className="border px-2 py-1">延迟（min）</th>
               <th className="border px-2 py-1">
                 <div className="flex items-center justify-between">
                   <span>操作</span>
@@ -744,27 +756,23 @@ export default function TemplatesPage() {
           </DndContext>
         </table>
       </div>
+      {schedule.warnings?.length ? (
+        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 mt-3">
+          <div className="font-medium mb-1">约束冲突与提示（预估）</div>
+          <ul className="list-disc pl-5">
+            {schedule.warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="flex gap-3">
         <button className="px-3 py-2 rounded bg-black text-white" onClick={addSlot}>新增时段</button>
         <button
-          className="px-3 py-2 rounded border"
-          onClick={async () => {
-            try {
-              // 计算 index，并保存到 DB
-              const withIndex = {
-                ...template,
-                slots: template.slots.map((s, i) => ({ ...s, index: i } as any)),
-              } as any;
-              const saved = await updateTemplate(template.id, withIndex);
-              setTemplate(saved);
-              saveTemplate(saved); // 兼容本地缓存
-              alert('已保存');
-            } catch (e) {
-              console.error(e);
-              alert('保存失败，请查看控制台');
-            }
-          }}
+          disabled={saving}
+          className="px-3 py-2 rounded border disabled:opacity-50"
+          onClick={saveToDb}
         >保存</button>
       </div>
       <p className="text-xs text-gray-500">演示版：仅存储在浏览器 localStorage。</p>
