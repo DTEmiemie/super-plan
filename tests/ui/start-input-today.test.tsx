@@ -36,7 +36,7 @@ vi.mock('next/link', () => ({
 }));
 
 // Import after mocks
-import TodayPage from '@/app/today/page';
+import TodayPage from '../../src/app/today/page';
 
 describe('TodayPage 开始列输入', () => {
   it('输入过程中不丢焦，完成 HH:mm 后生效', async () => {

@@ -30,7 +30,7 @@ vi.mock('next/link', () => ({
   default: (props: any) => React.createElement('a', { ...props, href: props.href }, props.children),
 }));
 
-import TemplatesPage from '@/app/templates/page';
+import TemplatesPage from '../../src/app/templates/page';
 
 describe('TemplatesPage 开始列输入', () => {
   it('输入过程中不丢焦，完成 HH:mm 后生效', async () => {
