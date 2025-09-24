@@ -5,9 +5,10 @@ type ComputeInput = {
   template: ScheduleTemplate;
 };
 
-// 简化版：
-// - 忽略 fixedStart（后续迭代）
-// - 刚性时段：若总时长不足，优先保留刚性；若刚性之和也超预算，按比例共同压缩（避免负值）
+// 调度规则（与 docs/plan.md 对齐）：
+// - 固定开始（F）：仅固定起点（HH:mm → 绝对分钟），时长仍参与段内按比例缩放（除非同时为刚性）。
+// - 刚性（R）：尽量保持设定时长不被压缩；当段可用时间不足时，先压缩非刚性；若仍不足，则保留刚性并产生告警（不强行裁剪）。
+// - 分段：以 fixedStart 为边界切分段；每段在可用时间内对“非刚性”按期望分钟权重等比缩放；统一整分并进行“余数分配”以贴合段长。
 export function computeSchedule({ template }: ComputeInput): DaySchedule {
   const warnings: string[] = [];
   const dayStartAbs = hmToMin(template.wakeStart);
