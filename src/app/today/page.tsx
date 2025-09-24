@@ -67,6 +67,11 @@ export default function TodayPage() {
   const [splitOpen, setSplitOpen] = useState<boolean>(false);
   const [splitIndex, setSplitIndex] = useState<number>(-1);
   const [splitValue, setSplitValue] = useState<string>('');
+  // 起点编辑（避免输入中途失焦/回退）
+  const [wakeEdit, setWakeEdit] = useState<string>('');
+  const [wakeEditing, setWakeEditing] = useState<boolean>(false);
+  // 行内固定开始编辑草稿，键：slotId → 临时字符串
+  const [fixedDraft, setFixedDraft] = useState<Record<string, string>>({});
 
   function openSplit(index: number) {
     const s = working.slots[index];
@@ -161,9 +166,25 @@ export default function TodayPage() {
         <td className="border px-2 py-1 text-center">
           <input
             className="border rounded px-2 py-1 w-24 text-center"
-            value={s.fixedStart ?? ''}
+            value={fixedDraft[s.id] ?? (s.fixedStart ?? '')}
             placeholder={formatClock(s.start)}
-            onChange={(e) => updateSlot(s.id, { fixedStart: e.target.value || undefined })}
+            onFocus={() => setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }))}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFixedDraft(prev => ({ ...prev, [s.id]: v }));
+              if (/^\d{1,2}:\d{2}$/.test(v)) {
+                updateSlot(s.id, { fixedStart: v });
+              } else {
+                // 未达 HH:mm 前，不写入模型（或清空为未固定）
+                updateSlot(s.id, { fixedStart: undefined });
+              }
+            }}
+            onBlur={() => {
+              const v = fixedDraft[s.id];
+              if (/^\d{1,2}:\d{2}$/.test(v)) updateSlot(s.id, { fixedStart: v });
+              else updateSlot(s.id, { fixedStart: undefined });
+              setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
+            }}
             disabled={!!s.rigid}
           />
         </td>
@@ -575,19 +596,24 @@ export default function TodayPage() {
           起点（HH:mm）
           <input
             className="border rounded px-2 py-1"
-            value={working.wakeStart}
+            value={wakeEditing ? wakeEdit : (working.wakeStart || '')}
+            onFocus={() => { setWakeEditing(true); setWakeEdit(working.wakeStart || ''); }}
             onChange={(e) => {
               const val = e.target.value;
-              if (ui.lockEndTime) {
-                const prevStart = hmToMin(working.wakeStart || '00:00');
-                const prevEndAbs = (prevStart + Math.max(0, working.totalHours || 0) * 60) % (24 * 60);
-                const newStart = hmToMin(val || '00:00');
-                const delta = (prevEndAbs - newStart + 1440) % 1440;
-                setWorking({ ...working, wakeStart: val, totalHours: Math.round(delta) / 60 });
-              } else {
-                setWorking({ ...working, wakeStart: val });
+              setWakeEdit(val);
+              if (/^\d{1,2}:\d{2}$/.test(val)) {
+                if (ui.lockEndTime) {
+                  const prevStart = hmToMin(working.wakeStart || '00:00');
+                  const prevEndAbs = (prevStart + Math.max(0, working.totalHours || 0) * 60) % (24 * 60);
+                  const newStart = hmToMin(val || '00:00');
+                  const delta = (prevEndAbs - newStart + 1440) % 1440;
+                  setWorking({ ...working, wakeStart: val, totalHours: Math.round(delta) / 60 });
+                } else {
+                  setWorking({ ...working, wakeStart: val });
+                }
               }
             }}
+            onBlur={() => { setWakeEditing(false); setWakeEdit(''); }}
           />
         </label>
         <label className="text-sm text-gray-700 flex flex-col gap-1">

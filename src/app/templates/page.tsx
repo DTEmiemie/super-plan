@@ -58,6 +58,11 @@ export default function TemplatesPage() {
   const [splitOpen, setSplitOpen] = useState<boolean>(false);
   const [splitIndex, setSplitIndex] = useState<number>(-1);
   const [splitValue, setSplitValue] = useState<string>('');
+  // 起点编辑（避免输入中途失焦/回退）
+  const [startEdit, setStartEdit] = useState<string>('');
+  const [startEditing, setStartEditing] = useState<boolean>(false);
+  // 行内固定开始编辑草稿
+  const [fixedDraft, setFixedDraft] = useState<Record<string, string>>({});
 
   // DnD sensors (pointer + keyboard)
   const sensors = useSensors(
@@ -144,9 +149,21 @@ export default function TemplatesPage() {
         <td className="border px-2 py-1 text-center">
           <input
             className="border rounded px-2 py-1 w-24 text-center"
-            value={s.fixedStart ?? ''}
+            value={fixedDraft[s.id] ?? (s.fixedStart ?? '')}
             placeholder={formatClock(schedule.slots[idx]?.start ?? 0)}
-            onChange={(e) => updateSlot(s.id, { fixedStart: e.target.value || undefined })}
+            onFocus={() => setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }))}
+            onChange={(e) => {
+              const v = e.target.value;
+              setFixedDraft(prev => ({ ...prev, [s.id]: v }));
+              if (/^\d{1,2}:\d{2}$/.test(v)) updateSlot(s.id, { fixedStart: v });
+              else updateSlot(s.id, { fixedStart: undefined });
+            }}
+            onBlur={() => {
+              const v = fixedDraft[s.id];
+              if (/^\d{1,2}:\d{2}$/.test(v)) updateSlot(s.id, { fixedStart: v });
+              else updateSlot(s.id, { fixedStart: undefined });
+              setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
+            }}
             disabled={!!s.rigid}
           />
         </td>
@@ -651,8 +668,14 @@ export default function TemplatesPage() {
           起点（HH:mm）
           <input
             className="border rounded px-2 py-1"
-            value={template.wakeStart}
-            onChange={(e) => onWakeStartChange(e.target.value)}
+            value={startEditing ? startEdit : (template.wakeStart || '')}
+            onFocus={() => { setStartEditing(true); setStartEdit(template.wakeStart || ''); }}
+            onChange={(e) => {
+              const v = e.target.value;
+              setStartEdit(v);
+              if (/^\d{1,2}:\d{2}$/.test(v)) onWakeStartChange(v);
+            }}
+            onBlur={() => { setStartEditing(false); setStartEdit(''); }}
           />
         </label>
         <div className="text-sm text-gray-700 flex flex-col gap-1">
