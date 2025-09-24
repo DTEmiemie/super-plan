@@ -155,13 +155,16 @@ export default function TemplatesPage() {
             onChange={(e) => {
               const v = e.target.value;
               setFixedDraft(prev => ({ ...prev, [s.id]: v }));
+              // 输入中途不写入模型，避免抖动；仅在合法时提交
               if (/^\d{1,2}:\d{2}$/.test(v)) updateSlot(s.id, { fixedStart: v });
-              else updateSlot(s.id, { fixedStart: undefined });
             }}
             onBlur={() => {
               const v = fixedDraft[s.id];
-              if (/^\d{1,2}:\d{2}$/.test(v)) updateSlot(s.id, { fixedStart: v });
-              else updateSlot(s.id, { fixedStart: undefined });
+              if (v == null || v === '') {
+                updateSlot(s.id, { fixedStart: undefined });
+              } else if (/^\d{1,2}:\d{2}$/.test(v)) {
+                updateSlot(s.id, { fixedStart: v });
+              } // 非法但非空：保持原值
               setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
             }}
             disabled={!!s.rigid}
