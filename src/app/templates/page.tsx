@@ -167,7 +167,7 @@ export default function TemplatesPage() {
               } // 非法但非空：保持原值
               setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
             }}
-            disabled={!!s.rigid}
+            disabled={false}
           />
         </td>
         <td className="border px-2 py-1">

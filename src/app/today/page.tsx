@@ -184,7 +184,8 @@ export default function TodayPage() {
               } // 非法但非空：保持原值不变
               setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
             }}
-            disabled={!!s.rigid}
+            // 刚性（R）仅表示时长不可压缩，不应限制开始时间编辑
+            disabled={false}
           />
         </td>
         <td className="border px-2 py-1">
