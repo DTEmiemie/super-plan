@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/server/db';
 import { configureSQLite } from '@/lib/server/sqlite';
+import { TemplateInput, encodeTags, decodeTags } from '@/lib/api/dto';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
   await configureSQLite();
@@ -9,23 +10,29 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     include: { slots: { orderBy: { index: 'asc' } } },
   });
   if (!tpl) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  return NextResponse.json(tpl);
+  const mapped = { ...tpl, slots: (tpl.slots || []).map((s: any) => ({ ...s, tags: decodeTags(s.tags) })) };
+  return NextResponse.json(mapped);
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   await configureSQLite();
   const id = params.id;
   const data = await req.json();
-  const { name, wakeStart, totalHours, slots } = data;
+  let parsed;
+  try {
+    parsed = TemplateInput.parse(data);
+  } catch (e: any) {
+    return NextResponse.json({ error: 'Invalid payload', details: e?.errors || String(e) }, { status: 400 });
+  }
   // transactional: update template, replace slots
   const result = await prisma.$transaction(async (tx) => {
     const exists = await tx.template.findUnique({ where: { id } });
     if (!exists) throw new Error('Not found');
-    await tx.template.update({ where: { id }, data: { name, wakeStart, totalHours } });
+    await tx.template.update({ where: { id }, data: { name: parsed.name, wakeStart: parsed.wakeStart, totalHours: parsed.totalHours } });
     await tx.templateSlot.deleteMany({ where: { templateId: id } });
-    if (Array.isArray(slots)) {
-      for (let i = 0; i < slots.length; i++) {
-        const s = slots[i];
+    if (Array.isArray(parsed.slots)) {
+      for (let i = 0; i < parsed.slots.length; i++) {
+        const s = parsed.slots[i];
         await tx.templateSlot.create({
           data: {
             templateId: id,
@@ -34,7 +41,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
             desiredMin: typeof s.desiredMin === 'number' ? s.desiredMin : 0,
             rigid: !!s.rigid,
             fixedStart: s.fixedStart ?? null,
-            tags: s.tags ?? null,
+            tags: encodeTags(s.tags),
           },
         });
       }
@@ -43,7 +50,10 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       where: { id },
       include: { slots: { orderBy: { index: 'asc' } } },
     });
-    return fresh;
+    const mapped = fresh
+      ? { ...fresh, slots: (fresh.slots || []).map((s: any) => ({ ...s, tags: decodeTags(s.tags) })) }
+      : null;
+    return mapped;
   });
   return NextResponse.json(result);
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/server/db';
 import { configureSQLite } from '@/lib/server/sqlite';
+import { ScheduleInput } from '@/lib/api/dto';
 
 // List schedules or get by date via query ?date=YYYY-MM-DD
 export async function GET(req: Request) {
@@ -27,20 +28,22 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   await configureSQLite();
   const body = await req.json();
-  const { date, name, wakeStart, totalHours, templateId, slots } = body || {};
-  if (!date || !name || !wakeStart || typeof totalHours !== 'number' || !Array.isArray(slots)) {
-    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+  let parsed;
+  try {
+    parsed = ScheduleInput.parse(body || {});
+  } catch (e: any) {
+    return NextResponse.json({ error: 'Invalid payload', details: e?.errors || String(e) }, { status: 400 });
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const existing = await tx.schedule.findUnique({ where: { date } });
+    const existing = await tx.schedule.findUnique({ where: { date: parsed.date } });
     const schedule = existing
-      ? await tx.schedule.update({ where: { date }, data: { name, wakeStart, totalHours, templateId: templateId ?? null } })
-      : await tx.schedule.create({ data: { date, name, wakeStart, totalHours, templateId: templateId ?? null } });
+      ? await tx.schedule.update({ where: { date: parsed.date }, data: { name: parsed.name, wakeStart: parsed.wakeStart, totalHours: parsed.totalHours, templateId: parsed.templateId ?? null } })
+      : await tx.schedule.create({ data: { date: parsed.date, name: parsed.name, wakeStart: parsed.wakeStart, totalHours: parsed.totalHours, templateId: parsed.templateId ?? null } });
 
     await tx.scheduleSlot.deleteMany({ where: { scheduleId: schedule.id } });
-    for (let i = 0; i < slots.length; i++) {
-      const s = slots[i];
+    for (let i = 0; i < parsed.slots.length; i++) {
+      const s = parsed.slots[i];
       await tx.scheduleSlot.create({
         data: {
           scheduleId: schedule.id,
@@ -56,7 +59,7 @@ export async function POST(req: Request) {
         },
       });
     }
-    const fresh = await tx.schedule.findUnique({ where: { date }, include: { slots: { orderBy: { index: 'asc' } } } });
+    const fresh = await tx.schedule.findUnique({ where: { date: parsed.date }, include: { slots: { orderBy: { index: 'asc' } } } });
     return fresh;
   });
   return NextResponse.json(result, { status: 201 });
