@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ScheduleTemplate, TemplateSlot, UiSettings } from '@/lib/types';
 import { saveTemplate, sampleTemplate, saveTemplateDraft, loadTemplateDraft, clearTemplateDraft, loadSnippetLibrary, saveSnippetLibrary } from '@/lib/utils/storage';
@@ -149,6 +149,7 @@ export default function TemplatesPage() {
         <td className="border px-2 py-1 text-center">
           <input
             className="border rounded px-2 py-1 w-24 text-center"
+            data-testid={`tpl-start-${s.id}`}
             value={fixedDraft[s.id] ?? (s.fixedStart ?? '')}
             placeholder={formatClock(schedule.slots[idx]?.start ?? 0)}
             onFocus={() => setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }))}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { computeSchedule } from '@/lib/scheduler/compute';
@@ -166,6 +166,7 @@ export default function TodayPage() {
         <td className="border px-2 py-1 text-center">
           <input
             className="border rounded px-2 py-1 w-24 text-center"
+            data-testid={`tdy-start-${s.id}`}
             value={fixedDraft[s.id] ?? (s.fixedStart ?? '')}
             placeholder={formatClock(s.start)}
             onFocus={() => setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }))}

@@ -3,7 +3,7 @@ import path from 'node:path';
 
 export default defineConfig({
   test: {
-    environment: 'node',
+    environment: 'jsdom',
   },
   resolve: {
     alias: {
@@ -11,4 +11,3 @@ export default defineConfig({
     },
   },
 });
-
