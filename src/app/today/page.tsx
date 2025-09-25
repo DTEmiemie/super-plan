@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { computeSchedule } from '@/lib/scheduler/compute';
 import { DaySchedule, ScheduleTemplate, TemplateSlot, UiSettings } from '@/lib/types';
 import { saveTemplate, sampleTemplate, saveScheduleDraft, loadScheduleDraft, clearScheduleDraft, loadSnippetLibrary } from '@/lib/utils/storage';
-import { formatClock, hmToMin, minToHm } from '@/lib/utils/time';
+import { formatClock, hmToMin, minToHm, parseHmLoose } from '@/lib/utils/time';
 import { loadSettings, defaultSettings, KEY as SETTINGS_KEY, saveSettings } from '@/lib/utils/settings';
 import { saveUiSettings } from '@/lib/client/api';
 import { createTemplate, fetchTemplates, updateTemplate } from '@/lib/client/api';
@@ -72,6 +72,15 @@ export default function TodayPage() {
   const [wakeEditing, setWakeEditing] = useState<boolean>(false);
   // 行内固定开始编辑草稿，键：slotId → 临时字符串
   const [fixedDraft, setFixedDraft] = useState<Record<string, string>>({});
+  const [minDraft, setMinDraft] = useState<Record<string, string>>({});
+  // 编辑态：禁用 DnD，避免输入时焦点被拖拽逻辑干扰
+  const [editing, setEditing] = useState<boolean>(false);
+  // 纯输入模式：输入期间先只改草稿，不立刻写回 working，彻底屏蔽快捷键/拖拽
+  const [pureInput, setPureInput] = useState<boolean>(false);
+  // 捕获阶段拦截全局 keydown，避免 DnD 等监听吃掉按键，影响输入
+  const keydownBlocker = useCallback((ev: KeyboardEvent) => {
+    try { (ev as any).stopImmediatePropagation?.(); } catch {}
+  }, []);
 
   function openSplit(index: number) {
     const s = working.slots[index];
@@ -83,9 +92,10 @@ export default function TodayPage() {
   }
 
   // DnD sensors (pointer + keyboard)
+  // 拖拽传感器：增加激活阈值，避免轻点误触拖拽
+  // 注意：避免传入 sensors 数组长度在渲染间波动（会触发 React 警告并影响可编辑性）
   const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
 
   function onDragEnd(e: DragEndEvent) {
@@ -106,9 +116,10 @@ export default function TodayPage() {
   }
 
   function Row({ s, idx }: { s: any; idx: number }) {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id });
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id, disabled: editing });
     const style: CSSProperties = { transform: CSS.Transform.toString(transform), transition };
     function onRowHotkeys(e: React.KeyboardEvent) {
+      if (editing) { e.stopPropagation(); return; }
       if (!e.altKey) return;
       const k = e.key;
       const isMove = k === 'ArrowUp' || k === 'ArrowDown';
@@ -123,6 +134,8 @@ export default function TodayPage() {
       if (k === 'p' || k === 'P') return insertAt(idx, 'above');
       if (k === 's' || k === 'S') return openSplit(idx);
     }
+    const isStartEditing = Object.prototype.hasOwnProperty.call(fixedDraft, s.id);
+    const isMinEditing = Object.prototype.hasOwnProperty.call(minDraft, s.id);
     return (
       <tr key={s.id} ref={setNodeRef} style={style} className={idx === currentIdx ? 'bg-blue-50' : (isDragging ? 'opacity-70' : '')} onKeyDown={onRowHotkeys}>
         <td className="border px-2 py-1 align-middle">
@@ -163,27 +176,88 @@ export default function TodayPage() {
             </label>
           </div>
         </td>
-        <td className="border px-2 py-1 text-center">
+        <td
+          className="border px-2 py-1 text-center cursor-text"
+          onClick={(e) => {
+            e.stopPropagation();
+            const el = document.getElementById(`tdy-start-${s.id}`) as HTMLInputElement | null;
+            el?.focus();
+            try { const len = el?.value.length ?? 0; el?.setSelectionRange(len, len); } catch {}
+          }}
+        >
           <input
-            className="border rounded px-2 py-1 w-24 text-center"
+            type="text"
+            draggable={false}
+            className="border rounded px-2 py-1 w-24 text-center bg-white text-gray-900 placeholder-gray-400 cursor-text relative z-10"
+            id={`tdy-start-${s.id}`}
             data-testid={`tdy-start-${s.id}`}
-            value={fixedDraft[s.id] ?? (s.fixedStart ?? '')}
+            key={`start-${s.id}-${isStartEditing ? 'edit' : 'view'}`}
+            {...(isStartEditing
+              ? { defaultValue: fixedDraft[s.id] ?? (s.fixedStart ?? '') }
+              : { value: s.fixedStart ?? '' })}
             placeholder={formatClock(s.start)}
-            onFocus={() => setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }))}
+            style={{ pointerEvents: 'auto' }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              // 先进入编辑（非受控）再触发 focus，可避免重挂载导致的丢焦
+              if (!Object.prototype.hasOwnProperty.call(fixedDraft, s.id)) {
+                setEditing(true);
+                setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }));
+              }
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onDragStart={(e) => e.preventDefault()}
+            onKeyDownCapture={(e) => {
+              e.stopPropagation();
+              try { (e as any).nativeEvent?.stopImmediatePropagation?.(); } catch {}
+            }}
+            // 兼容仅触发 input 事件；纯输入模式下仅更新草稿
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              setFixedDraft(prev => ({ ...prev, [s.id]: v }));
+              if (!pureInput) {
+                const norm = parseHmLoose(v);
+                if (norm) updateSlot(s.id, { fixedStart: norm });
+              }
+            }}
+            onFocus={() => { 
+              console.log(`开始输入框 onFocus - ID: ${s.id}, 当前值: "${s.fixedStart ?? ''}", editing: ${editing}`);
+              setEditing(true); 
+              if (!Object.prototype.hasOwnProperty.call(fixedDraft, s.id)) {
+                setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }));
+              }
+              try { window.addEventListener('keydown', keydownBlocker, true); } catch {}
+              setPureInput(true);
+            }}
             onChange={(e) => {
               const v = e.target.value;
+              console.log(`开始输入框 onChange - ID: ${s.id}, 新值: "${v}", editing: ${editing}`);
               setFixedDraft(prev => ({ ...prev, [s.id]: v }));
-              // 输入中途不写入模型，避免抖动与丢焦；仅在合法时提交
-              if (/^\d{1,2}:\d{2}$/.test(v)) updateSlot(s.id, { fixedStart: v });
+              if (!pureInput) {
+                const norm = parseHmLoose(v);
+                if (norm) updateSlot(s.id, { fixedStart: norm });
+              }
             }}
             onBlur={() => {
+              console.log(`开始输入框 onBlur - ID: ${s.id}, 草稿值: "${fixedDraft[s.id]}", editing: ${editing}`);
+              setEditing(false);
+              try { window.removeEventListener('keydown', keydownBlocker, true); } catch {}
               const v = fixedDraft[s.id];
-              if (v == null || v === '') {
-                updateSlot(s.id, { fixedStart: undefined });
-              } else if (/^\d{1,2}:\d{2}$/.test(v)) {
-                updateSlot(s.id, { fixedStart: v });
-              } // 非法但非空：保持原值不变
-              setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
+              // 纯输入：失焦提交，否则仅清理草稿
+              if (pureInput) {
+                if (v == null || v === '') {
+                  updateSlot(s.id, { fixedStart: undefined });
+                } else {
+                  const norm = parseHmLoose(v);
+                  if (norm) updateSlot(s.id, { fixedStart: norm });
+                }
+              }
+              setTimeout(() => {
+                setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
+              }, 0);
+              setPureInput(false);
             }}
             // 刚性（R）仅表示时长不可压缩，不应限制开始时间编辑
             disabled={false}
@@ -198,12 +272,75 @@ export default function TodayPage() {
             onChange={(e) => updateSlot(s.id, { title: e.target.value })}
           />
         </td>
-        <td className="border px-2 py-1 text-center">
+        <td
+          className="border px-2 py-1 text-center cursor-text"
+          onClick={(e) => {
+            e.stopPropagation();
+            const el = document.querySelector(`input[data-testid='tdy-min-${s.id}']`) as HTMLInputElement | null;
+            el?.focus();
+            try { const len = el?.value.length ?? 0; el?.setSelectionRange(len, len); } catch {}
+          }}
+        >
           <input
             type="number"
             className="border rounded px-2 py-1 w-24 text-right"
-            value={s.desiredMin === 0 ? '' : String(s.desiredMin)}
-            onChange={(e) => updateSlot(s.id, { desiredMin: Number(e.target.value || 0) })}
+            key={`min-${s.id}-${isMinEditing ? 'edit' : 'view'}`}
+            {...(isMinEditing
+              ? { defaultValue: minDraft[s.id] ?? (s.desiredMin === 0 ? '' : String(s.desiredMin)) }
+              : { value: (s.desiredMin === 0 ? '' : String(s.desiredMin)) })}
+            data-testid={`tdy-min-${s.id}`}
+            draggable={false}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              if (!Object.prototype.hasOwnProperty.call(minDraft, s.id)) {
+                setEditing(true);
+                setMinDraft(prev => ({ ...prev, [s.id]: (s.desiredMin === 0 ? '' : String(s.desiredMin)) }));
+              }
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onDragStart={(e) => e.preventDefault()}
+            onKeyDownCapture={(e) => {
+              e.stopPropagation();
+              try { (e as any).nativeEvent?.stopImmediatePropagation?.(); } catch {}
+            }}
+            // 兼容仅触发 input；纯输入模式下仅更新草稿
+            onInput={(e) => {
+              const v = (e.target as HTMLInputElement).value;
+              setMinDraft(prev => ({ ...prev, [s.id]: v }));
+              if (!pureInput) {
+                const nextNum = Math.max(0, parseInt(v || '0', 10) || 0);
+                updateSlot(s.id, { desiredMin: nextNum });
+              }
+            }}
+            onFocus={() => { 
+              console.log(`期望输入框 onFocus - ID: ${s.id}, 当前值: "${s.desiredMin}", editing: ${editing}`);
+              setEditing(true); 
+              setMinDraft(prev => ({ ...prev, [s.id]: (s.desiredMin === 0 ? '' : String(s.desiredMin)) })); 
+              try { window.addEventListener('keydown', keydownBlocker, true); } catch {}
+              setPureInput(true);
+            }}
+            onChange={(e) => {
+              const v = e.target.value;
+              setMinDraft(prev => ({ ...prev, [s.id]: v }));
+              if (!pureInput) {
+                const nextNum = Math.max(0, parseInt(v || '0', 10) || 0);
+                updateSlot(s.id, { desiredMin: nextNum });
+              }
+            }}
+            onBlur={() => {
+              setEditing(false);
+              try { window.removeEventListener('keydown', keydownBlocker, true); } catch {}
+              // 纯输入：失焦提交；普通模式：输入时已提交，这里仅清理草稿
+              if (pureInput) {
+                const raw = minDraft[s.id];
+                const nextNum = Math.max(0, parseInt(raw || '0', 10) || 0);
+                updateSlot(s.id, { desiredMin: nextNum });
+              }
+              setMinDraft(prev => { const n = { ...prev }; delete n[s.id]; return n; });
+              setPureInput(false);
+            }}
           />
         </td>
         <td className="border px-2 py-1 text-right">{Math.round(s.actLen)}</td>
@@ -450,6 +587,26 @@ export default function TodayPage() {
 
   return (
     <div className="space-y-4">
+      {/* 临时调试面板 */}
+      <div className="p-3 border rounded bg-yellow-50 text-sm">
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-medium text-yellow-800">🔧 输入框调试面板</span>
+          <button 
+            className="px-2 py-1 border rounded text-xs"
+            onClick={() => {
+              setEditing(false);
+              setFixedDraft({});
+              setMinDraft({});
+              console.log('已重置所有编辑状态');
+            }}
+          >重置编辑状态</button>
+        </div>
+        <div className="grid grid-cols-3 gap-4 text-xs">
+          <div>编辑状态: <span className={editing ? 'text-red-600' : 'text-green-600'}>{editing ? 'true' : 'false'}</span></div>
+          <div>固定草稿: <span className="font-mono">{JSON.stringify(fixedDraft).length > 50 ? Object.keys(fixedDraft).length + ' 项' : JSON.stringify(fixedDraft)}</span></div>
+          <div>分钟草稿: <span className="font-mono">{JSON.stringify(minDraft).length > 50 ? Object.keys(minDraft).length + ' 项' : JSON.stringify(minDraft)}</span></div>
+        </div>
+      </div>
       {ui.showHotkeyHint ? (
         <div className="p-2 border rounded bg-gray-50 text-sm flex items-center justify-between">
           <span>
@@ -597,24 +754,41 @@ export default function TodayPage() {
           起点（HH:mm）
           <input
             className="border rounded px-2 py-1"
+            data-testid="tdy-wake-start"
             value={wakeEditing ? wakeEdit : (working.wakeStart || '')}
             onFocus={() => { setWakeEditing(true); setWakeEdit(working.wakeStart || ''); }}
             onChange={(e) => {
               const val = e.target.value;
               setWakeEdit(val);
-              if (/^\d{1,2}:\d{2}$/.test(val)) {
+              const norm = parseHmLoose(val);
+              if (norm) {
                 if (ui.lockEndTime) {
                   const prevStart = hmToMin(working.wakeStart || '00:00');
                   const prevEndAbs = (prevStart + Math.max(0, working.totalHours || 0) * 60) % (24 * 60);
-                  const newStart = hmToMin(val || '00:00');
+                  const newStart = hmToMin(norm || '00:00');
                   const delta = (prevEndAbs - newStart + 1440) % 1440;
-                  setWorking({ ...working, wakeStart: val, totalHours: Math.round(delta) / 60 });
+                  setWorking({ ...working, wakeStart: norm, totalHours: Math.round(delta) / 60 });
                 } else {
-                  setWorking({ ...working, wakeStart: val });
+                  setWorking({ ...working, wakeStart: norm });
                 }
               }
             }}
-            onBlur={() => { setWakeEditing(false); setWakeEdit(''); }}
+            onBlur={() => {
+              const norm = parseHmLoose(wakeEdit);
+              if (norm) {
+                if (ui.lockEndTime) {
+                  const prevStart = hmToMin(working.wakeStart || '00:00');
+                  const prevEndAbs = (prevStart + Math.max(0, working.totalHours || 0) * 60) % (24 * 60);
+                  const newStart = hmToMin(norm || '00:00');
+                  const delta = (prevEndAbs - newStart + 1440) % 1440;
+                  setWorking({ ...working, wakeStart: norm, totalHours: Math.round(delta) / 60 });
+                } else {
+                  setWorking({ ...working, wakeStart: norm });
+                }
+              }
+              setWakeEditing(false);
+              setWakeEdit('');
+            }}
           />
         </label>
         <label className="text-sm text-gray-700 flex flex-col gap-1">
@@ -716,6 +890,12 @@ export default function TodayPage() {
       ) : null}
 
       <div className="overflow-x-auto">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis]}
+          onDragEnd={onDragEnd}
+        >
         <table className="min-w-full border text-sm">
           <thead className="bg-gray-50">
             <tr>
@@ -740,12 +920,6 @@ export default function TodayPage() {
               </th>
             </tr>
           </thead>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            modifiers={[restrictToVerticalAxis]}
-            onDragEnd={onDragEnd}
-          >
             <SortableContext items={schedule.slots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
               <tbody>
                 {schedule.slots.map((s, idx) => (
@@ -753,7 +927,6 @@ export default function TodayPage() {
                 ))}
               </tbody>
             </SortableContext>
-          </DndContext>
           <tfoot>
             <tr>
               <td className="border px-2 py-1" colSpan={6}>合计</td>
@@ -762,6 +935,7 @@ export default function TodayPage() {
             </tr>
           </tfoot>
         </table>
+        </DndContext>
       </div>
 
       {schedule.warnings?.length ? (
