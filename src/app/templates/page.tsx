@@ -9,7 +9,7 @@ import { createTemplate, fetchTemplates, updateTemplate } from '@/lib/client/api
 import { defaultSettings, loadSettings, saveSettings } from '@/lib/utils/settings';
 import { saveUiSettings } from '@/lib/client/api';
 import { computeSchedule } from '@/lib/scheduler/compute';
-import { hmToMin, minToHm, formatClock } from '@/lib/utils/time';
+import { hmToMin, minToHm, formatClock, parseHmLoose } from '@/lib/utils/time';
 import {
   DndContext,
   closestCenter,
@@ -58,15 +58,20 @@ export default function TemplatesPage() {
   const [splitOpen, setSplitOpen] = useState<boolean>(false);
   const [splitIndex, setSplitIndex] = useState<number>(-1);
   const [splitValue, setSplitValue] = useState<string>('');
+  // 编辑态：禁用 DnD，避免输入时焦点被拖拽逻辑干扰
+  const [editing, setEditing] = useState<boolean>(false);
   // 起点编辑（避免输入中途失焦/回退）
   const [startEdit, setStartEdit] = useState<string>('');
   const [startEditing, setStartEditing] = useState<boolean>(false);
   // 行内固定开始编辑草稿
   const [fixedDraft, setFixedDraft] = useState<Record<string, string>>({});
+  const [minDraft, setMinDraft] = useState<Record<string, string>>({});
 
   // DnD sensors (pointer + keyboard)
+  // 拖拽传感器：增加激活阈值，避免轻点误触拖拽
+  // 注意：避免传入 sensors 数组长度在渲染间波动（会触发 React 警告并影响可编辑性）
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
@@ -90,7 +95,7 @@ export default function TemplatesPage() {
 
   // Row component for sortable integration
   function Row({ s, idx }: { s: TemplateSlot; idx: number }) {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id });
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id, disabled: editing });
     const style: CSSProperties = { transform: CSS.Transform.toString(transform), transition };
     function onRowHotkeys(e: React.KeyboardEvent) {
       // 统一在整行捕获，输入框也可触发；使用 Alt+Shift 组合避免浏览器冲突
@@ -148,25 +153,39 @@ export default function TemplatesPage() {
         </td>
         <td className="border px-2 py-1 text-center">
           <input
-            className="border rounded px-2 py-1 w-24 text-center"
+            type="text"
+            draggable={false}
+            className="border rounded px-2 py-1 w-24 text-center bg-white text-gray-900 placeholder-gray-400 cursor-text relative z-10"
             data-testid={`tpl-start-${s.id}`}
-            value={fixedDraft[s.id] ?? (s.fixedStart ?? '')}
+            key={`${s.id}-${s.fixedStart ?? ''}`}
+            defaultValue={s.fixedStart ?? ''}
             placeholder={formatClock(schedule.slots[idx]?.start ?? 0)}
-            onFocus={() => setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }))}
-            onChange={(e) => {
-              const v = e.target.value;
-              setFixedDraft(prev => ({ ...prev, [s.id]: v }));
-              // 输入中途不写入模型，避免抖动；仅在合法时提交
-              if (/^\d{1,2}:\d{2}$/.test(v)) updateSlot(s.id, { fixedStart: v });
+            style={{ pointerEvents: 'auto' }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onDragStart={(e) => e.preventDefault()}
+            onKeyDown={(e) => e.stopPropagation()}
+            onFocus={() => {
+              setEditing(true);
             }}
-            onBlur={() => {
-              const v = fixedDraft[s.id];
-              if (v == null || v === '') {
+            onBlur={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+
+              // 先清理编辑状态
+              setEditing(false);
+
+              // 失焦时提交到 template
+              if (raw == null || raw === '') {
                 updateSlot(s.id, { fixedStart: undefined });
-              } else if (/^\d{1,2}:\d{2}$/.test(v)) {
-                updateSlot(s.id, { fixedStart: v });
-              } // 非法但非空：保持原值
-              setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
+              } else {
+                const norm = parseHmLoose(raw);
+                if (norm) {
+                  updateSlot(s.id, { fixedStart: norm });
+                }
+                // 非法值不提交，保持原值
+              }
             }}
             disabled={false}
           />
@@ -184,8 +203,26 @@ export default function TemplatesPage() {
           <input
             type="number"
             className="border rounded px-2 py-1 w-24 text-right"
-            value={s.desiredMin === 0 ? '' : String(s.desiredMin)}
-            onChange={(e) => updateSlot(s.id, { desiredMin: Number(e.target.value || 0) })}
+            value={minDraft[s.id] ?? (s.desiredMin === 0 ? '' : String(s.desiredMin))}
+            draggable={false}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onDragStart={(e) => e.preventDefault()}
+            onKeyDown={(e) => e.stopPropagation()}
+            onFocus={() => { setEditing(true); setMinDraft(prev => ({ ...prev, [s.id]: (s.desiredMin === 0 ? '' : String(s.desiredMin)) })); }}
+            onChange={(e) => {
+              const v = e.target.value;
+              setMinDraft(prev => ({ ...prev, [s.id]: v }));
+            }}
+            onBlur={() => {
+              setEditing(false);
+              const raw = minDraft[s.id];
+              const nextNum = Math.max(0, parseInt(raw || '0', 10) || 0);
+              updateSlot(s.id, { desiredMin: nextNum });
+              setMinDraft(prev => { const n = { ...prev }; delete n[s.id]; return n; });
+            }}
           />
         </td>
         <td className="border px-2 py-1 text-right">{Math.round(schedule.slots[idx]?.actLen ?? 0)}</td>
@@ -672,14 +709,22 @@ export default function TemplatesPage() {
           起点（HH:mm）
           <input
             className="border rounded px-2 py-1"
+            data-testid="tpl-wake-start"
             value={startEditing ? startEdit : (template.wakeStart || '')}
             onFocus={() => { setStartEditing(true); setStartEdit(template.wakeStart || ''); }}
             onChange={(e) => {
               const v = e.target.value;
               setStartEdit(v);
-              if (/^\d{1,2}:\d{2}$/.test(v)) onWakeStartChange(v);
+              const norm = parseHmLoose(v);
+              if (norm) onWakeStartChange(norm);
             }}
-            onBlur={() => { setStartEditing(false); setStartEdit(''); }}
+            onBlur={() => {
+              const v = startEdit;
+              const norm = parseHmLoose(v);
+              if (norm) onWakeStartChange(norm);
+              setStartEditing(false);
+              setStartEdit('');
+            }}
           />
         </label>
         <div className="text-sm text-gray-700 flex flex-col gap-1">
@@ -743,6 +788,12 @@ export default function TemplatesPage() {
       </div>
 
       <div className="overflow-x-auto">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis]}
+          onDragEnd={onDragEnd}
+        >
         <table className="min-w-full border text-sm">
           <thead className="bg-gray-50">
             <tr>
@@ -767,12 +818,6 @@ export default function TemplatesPage() {
               </th>
             </tr>
           </thead>
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            modifiers={[restrictToVerticalAxis]}
-            onDragEnd={onDragEnd}
-          >
             <SortableContext items={template.slots.map(s => s.id)} strategy={verticalListSortingStrategy}>
               <tbody>
                 {template.slots.map((s, idx) => (
@@ -780,8 +825,8 @@ export default function TemplatesPage() {
                 ))}
               </tbody>
             </SortableContext>
-          </DndContext>
         </table>
+        </DndContext>
       </div>
       {schedule.warnings?.length ? (
         <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 mt-3">

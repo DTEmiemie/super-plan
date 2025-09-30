@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { computeSchedule } from '@/lib/scheduler/compute';
@@ -67,6 +67,8 @@ export default function TodayPage() {
   const [splitOpen, setSplitOpen] = useState<boolean>(false);
   const [splitIndex, setSplitIndex] = useState<number>(-1);
   const [splitValue, setSplitValue] = useState<string>('');
+  const editingRef = useRef(false);
+  const interactedRef = useRef(false);
   // 起点编辑（避免输入中途失焦/回退）
   const [wakeEdit, setWakeEdit] = useState<string>('');
   const [wakeEditing, setWakeEditing] = useState<boolean>(false);
@@ -134,7 +136,6 @@ export default function TodayPage() {
       if (k === 'p' || k === 'P') return insertAt(idx, 'above');
       if (k === 's' || k === 'S') return openSplit(idx);
     }
-    const isStartEditing = Object.prototype.hasOwnProperty.call(fixedDraft, s.id);
     const isMinEditing = Object.prototype.hasOwnProperty.call(minDraft, s.id);
     return (
       <tr key={s.id} ref={setNodeRef} style={style} className={idx === currentIdx ? 'bg-blue-50' : (isDragging ? 'opacity-70' : '')} onKeyDown={onRowHotkeys}>
@@ -191,19 +192,14 @@ export default function TodayPage() {
             className="border rounded px-2 py-1 w-24 text-center bg-white text-gray-900 placeholder-gray-400 cursor-text relative z-10"
             id={`tdy-start-${s.id}`}
             data-testid={`tdy-start-${s.id}`}
-            key={`start-${s.id}-${isStartEditing ? 'edit' : 'view'}`}
-            {...(isStartEditing
-              ? { defaultValue: fixedDraft[s.id] ?? (s.fixedStart ?? '') }
-              : { value: s.fixedStart ?? '' })}
+            key={`${s.id}-${s.fixedStart ?? ''}`}
+            defaultValue={s.fixedStart ?? ''}
             placeholder={formatClock(s.start)}
             style={{ pointerEvents: 'auto' }}
             onPointerDown={(e) => {
               e.stopPropagation();
-              // 先进入编辑（非受控）再触发 focus，可避免重挂载导致的丢焦
-              if (!Object.prototype.hasOwnProperty.call(fixedDraft, s.id)) {
-                setEditing(true);
-                setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }));
-              }
+              setEditing(true);
+              setPureInput(true);
             }}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
@@ -213,53 +209,35 @@ export default function TodayPage() {
               e.stopPropagation();
               try { (e as any).nativeEvent?.stopImmediatePropagation?.(); } catch {}
             }}
-            // 兼容仅触发 input 事件；纯输入模式下仅更新草稿
-            onInput={(e) => {
-              const v = (e.target as HTMLInputElement).value;
-              setFixedDraft(prev => ({ ...prev, [s.id]: v }));
-              if (!pureInput) {
-                const norm = parseHmLoose(v);
-                if (norm) updateSlot(s.id, { fixedStart: norm });
-              }
-            }}
-            onFocus={() => { 
+            onFocus={() => {
               console.log(`开始输入框 onFocus - ID: ${s.id}, 当前值: "${s.fixedStart ?? ''}", editing: ${editing}`);
-              setEditing(true); 
-              if (!Object.prototype.hasOwnProperty.call(fixedDraft, s.id)) {
-                setFixedDraft(prev => ({ ...prev, [s.id]: s.fixedStart ?? '' }));
-              }
+              setEditing(true);
+              editingRef.current = true;
+              interactedRef.current = true;
               try { window.addEventListener('keydown', keydownBlocker, true); } catch {}
               setPureInput(true);
             }}
-            onChange={(e) => {
-              const v = e.target.value;
-              console.log(`开始输入框 onChange - ID: ${s.id}, 新值: "${v}", editing: ${editing}`);
-              setFixedDraft(prev => ({ ...prev, [s.id]: v }));
-              if (!pureInput) {
-                const norm = parseHmLoose(v);
-                if (norm) updateSlot(s.id, { fixedStart: norm });
-              }
-            }}
-            onBlur={() => {
-              console.log(`开始输入框 onBlur - ID: ${s.id}, 草稿值: "${fixedDraft[s.id]}", editing: ${editing}`);
+            onBlur={(e) => {
+              const raw = (e.target as HTMLInputElement).value;
+              console.log(`开始输入框 onBlur - ID: ${s.id}, 草稿值: "${raw}", editing: ${editing}`);
+
+              // 先清理编辑状态和事件监听
               setEditing(false);
-              try { window.removeEventListener('keydown', keydownBlocker, true); } catch {}
-              const v = fixedDraft[s.id];
-              // 纯输入：失焦提交，否则仅清理草稿
-              if (pureInput) {
-                if (v == null || v === '') {
-                  updateSlot(s.id, { fixedStart: undefined });
-                } else {
-                  const norm = parseHmLoose(v);
-                  if (norm) updateSlot(s.id, { fixedStart: norm });
-                }
-              }
-              setTimeout(() => {
-                setFixedDraft(prev => { const next = { ...prev }; delete next[s.id]; return next; });
-              }, 0);
+              editingRef.current = false;
               setPureInput(false);
+              try { window.removeEventListener('keydown', keydownBlocker, true); } catch {}
+
+              // 失焦时提交到 working
+              if (raw == null || raw === '') {
+                updateSlot(s.id, { fixedStart: undefined });
+              } else {
+                const norm = parseHmLoose(raw);
+                if (norm) {
+                  updateSlot(s.id, { fixedStart: norm });
+                }
+                // 非法值不提交，保持原值
+              }
             }}
-            // 刚性（R）仅表示时长不可压缩，不应限制开始时间编辑
             disabled={false}
           />
         </td>
@@ -284,10 +262,7 @@ export default function TodayPage() {
           <input
             type="number"
             className="border rounded px-2 py-1 w-24 text-right"
-            key={`min-${s.id}-${isMinEditing ? 'edit' : 'view'}`}
-            {...(isMinEditing
-              ? { defaultValue: minDraft[s.id] ?? (s.desiredMin === 0 ? '' : String(s.desiredMin)) }
-              : { value: (s.desiredMin === 0 ? '' : String(s.desiredMin)) })}
+            value={isMinEditing ? (minDraft[s.id] ?? (s.desiredMin === 0 ? '' : String(s.desiredMin))) : (s.desiredMin === 0 ? '' : String(s.desiredMin))}
             data-testid={`tdy-min-${s.id}`}
             draggable={false}
             onPointerDown={(e) => {
@@ -309,14 +284,12 @@ export default function TodayPage() {
             onInput={(e) => {
               const v = (e.target as HTMLInputElement).value;
               setMinDraft(prev => ({ ...prev, [s.id]: v }));
-              if (!pureInput) {
-                const nextNum = Math.max(0, parseInt(v || '0', 10) || 0);
-                updateSlot(s.id, { desiredMin: nextNum });
-              }
             }}
             onFocus={() => { 
               console.log(`期望输入框 onFocus - ID: ${s.id}, 当前值: "${s.desiredMin}", editing: ${editing}`);
               setEditing(true); 
+              editingRef.current = true;
+              interactedRef.current = true;
               setMinDraft(prev => ({ ...prev, [s.id]: (s.desiredMin === 0 ? '' : String(s.desiredMin)) })); 
               try { window.addEventListener('keydown', keydownBlocker, true); } catch {}
               setPureInput(true);
@@ -324,21 +297,18 @@ export default function TodayPage() {
             onChange={(e) => {
               const v = e.target.value;
               setMinDraft(prev => ({ ...prev, [s.id]: v }));
-              if (!pureInput) {
-                const nextNum = Math.max(0, parseInt(v || '0', 10) || 0);
-                updateSlot(s.id, { desiredMin: nextNum });
-              }
             }}
-            onBlur={() => {
+            onBlur={(e) => {
               setEditing(false);
+              editingRef.current = false;
               try { window.removeEventListener('keydown', keydownBlocker, true); } catch {}
-              // 纯输入：失焦提交；普通模式：输入时已提交，这里仅清理草稿
-              if (pureInput) {
-                const raw = minDraft[s.id];
-                const nextNum = Math.max(0, parseInt(raw || '0', 10) || 0);
-                updateSlot(s.id, { desiredMin: nextNum });
-              }
-              setMinDraft(prev => { const n = { ...prev }; delete n[s.id]; return n; });
+              // 失焦即提交（不依赖闭包中的 pureInput）
+              const raw = (e.target as HTMLInputElement).value;
+              const nextNum = Math.max(0, parseInt(raw || '0', 10) || 0);
+              updateSlot(s.id, { desiredMin: nextNum });
+              setTimeout(() => {
+                setMinDraft(prev => { const n = { ...prev }; delete n[s.id]; return n; });
+              }, 0);
               setPureInput(false);
             }}
           />
@@ -373,22 +343,28 @@ export default function TodayPage() {
           setTplList(list);
           const t = list[0];
           const w = { id: t.id, name: t.name, wakeStart: t.wakeStart, totalHours: t.totalHours, slots: t.slots };
-          setWorking(w);
-          setSavedSnapshot(w);
+          if (!interactedRef.current && !editingRef.current) {
+            setWorking(w);
+            setSavedSnapshot(w);
+          }
           setSelectedTplId(t.id);
         } else {
           const created = await createTemplate(sampleTemplate());
           setTplList([created]);
           const w = { id: created.id, name: created.name, wakeStart: created.wakeStart, totalHours: created.totalHours, slots: created.slots };
-          setWorking(w);
-          setSavedSnapshot(w);
+          if (!interactedRef.current && !editingRef.current) {
+            setWorking(w);
+            setSavedSnapshot(w);
+          }
           setSelectedTplId(created.id);
         }
       } catch (e) {
         const t = sampleTemplate();
         const w = { id: t.id, name: t.name, wakeStart: t.wakeStart, totalHours: t.totalHours, slots: t.slots };
-        setWorking(w);
-        setSavedSnapshot(w);
+        if (!interactedRef.current && !editingRef.current) {
+          setWorking(w);
+          setSavedSnapshot(w);
+        }
         setTplList([t]);
         setSelectedTplId(t.id);
       }
