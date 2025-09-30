@@ -384,14 +384,6 @@ export default function TemplatesPage() {
     setTemplate({ ...template, totalHours: Math.round(delta) / 60 });
   }
 
-  function fillFromContent() {
-    try {
-      const sch = computeSchedule({ template });
-      const totalAct = sch.slots.reduce((a, s) => a + s.actLen, 0);
-      setTemplate({ ...template, totalHours: Math.round(totalAct) / 60 });
-    } catch {}
-  }
-
   function addSlot() {
     const next: TemplateSlot = {
       id: crypto.randomUUID(),
@@ -781,7 +773,6 @@ export default function TemplatesPage() {
                 onEndChange((/^\d{1,2}:\d{2}$/.test(v) ? v : endHm));
               }}
             >按结束回填</button>
-            <button className="px-2 py-1 border rounded" onClick={fillFromContent}>按内容回填</button>
           </div>
         </div>
         <div className="text-sm text-gray-700 flex items-end">合计期望分钟：{totalDesired} min</div>

@@ -854,7 +854,6 @@ export default function TodayPage() {
               const delta = (end - start + 1440) % 1440;
               setWorking({ ...working, totalHours: Math.round(delta) / 60 });
             }}>按结束回填</button>
-            <button className="px-2 py-1 border rounded" onClick={() => setWorking({ ...working, totalHours: Math.round(totalAct) / 60 })}>按内容回填</button>
           </div>
         </div>
       </div>
