@@ -1,18 +1,27 @@
 // Vitest setup file for jsdom environment
+// Must run before any imports to properly polyfill global objects
 
-// Fix for jsdom TextEncoder/TextDecoder issues
 import { TextEncoder, TextDecoder } from 'util';
+import { webcrypto } from 'crypto';
 
-// Polyfill global objects that jsdom might not provide
-if (typeof global.TextEncoder === 'undefined') {
-  global.TextEncoder = TextEncoder as any;
+// Polyfill TextEncoder/TextDecoder (critical for jsdom)
+Object.assign(global, {
+  TextEncoder,
+  TextDecoder,
+});
+
+// Polyfill crypto APIs
+if (typeof global.crypto === 'undefined') {
+  Object.defineProperty(global, 'crypto', {
+    value: webcrypto,
+    writable: false,
+    configurable: true,
+  });
 }
 
-if (typeof global.TextDecoder === 'undefined') {
-  global.TextDecoder = TextDecoder as any;
-}
-
-// Polyfill structuredClone if not available (jsdom compatibility)
+// Polyfill structuredClone if not available
 if (typeof global.structuredClone === 'undefined') {
-  global.structuredClone = (obj: any) => JSON.parse(JSON.stringify(obj));
+  global.structuredClone = (obj: any) => {
+    return JSON.parse(JSON.stringify(obj));
+  };
 }
