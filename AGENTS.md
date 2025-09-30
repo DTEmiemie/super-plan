@@ -29,10 +29,11 @@
 - 时间计算首选 `date-fns`；输入校验使用 `zod`。
 
 ## 测试规范
-- 框架：Vitest（组件配合 React Testing Library）。
+- 框架：Vitest（测试环境使用 happy-dom；组件配合 React Testing Library）。
 - 命名：与源码路径镜像，使用 `*.test.ts(x)`（例：`src/lib/scheduler/scheduler.test.ts`）。
 - 重点：调度器核心单测与基础 API 测试；关键路径优先、务实覆盖率。
 - 运行：`npm run test`，或按路径过滤：`npm run test -- src/lib/scheduler`。
+- 测试环境：使用 happy-dom（轻量、快速、Node.js 兼容性好，无需额外 polyfills）；配置位于 `vitest.config.ts`。
 
 ## 提交与 Pull Request 规范
 - 提交遵循 Conventional Commits：`feat`、`fix`、`docs`、`refactor`、`test`、`chore`、`build`、`ci`。

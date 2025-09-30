@@ -253,3 +253,142 @@ test('开始列输入框支持连续输入', async () => {
 3. 失焦时从 DOM 直接读取并提交
 
 这个修复不仅解决了问题，还显著提升了性能和代码简洁性，完美体现了 React 受控 vs 非受控组件的权衡取舍。
+
+---
+
+## CI 测试环境修复
+
+### 问题描述
+
+在修复输入框问题并推送后，CI 持续失败，报错：
+
+```
+TypeError: Cannot read properties of undefined (reading 'get')
+❯ Object.<anonymous> node_modules/webidl-conversions/lib/index.js:325:94
+❯ Object.<anonymous> node_modules/whatwg-url/lib/URL.js:3:21
+
+Vitest caught 5 unhandled errors during the test run.
+```
+
+### 根本原因分析
+
+1. **jsdom 的 polyfill 依赖**
+   - jsdom 在 Node.js 环境中需要手动 polyfills（TextEncoder、TextDecoder、crypto 等 Web APIs）
+   - 这些 API 在浏览器中原生支持，但在 Node.js 中不存在
+
+2. **Polyfill 时序问题**
+   - 创建了 `vitest.setup.ts` 尝试注入 polyfills
+   - 但 setup 文件运行时，`whatwg-url`、`webidl-conversions` 等依赖模块**已经开始加载**
+   - 这些模块在初始化时就访问了 `TextEncoder` 等全局对象
+   - 导致即使后续注入 polyfill 也无法生效
+
+3. **多次尝试失败**
+   - 尝试 1：条件判断 + 赋值 → 时序太晚，无效
+   - 尝试 2：`Object.assign` 强制覆盖 → 依然时序问题，无效
+   - 根本原因：手动 polyfill 方案无法解决模块加载顺序问题
+
+### 最终解决方案：使用 happy-dom
+
+**为什么选择 happy-dom：**
+- ✅ 对 Node.js 环境兼容性更好，**无需任何 polyfills**
+- ✅ 更轻量、更快（启动速度更快）
+- ✅ 更稳定（无 jsdom 的复杂依赖链）
+- ✅ 符合 KISS 原则：配置更简洁
+
+**变更文件：**
+
+1. **`package.json`** - 添加依赖
+   ```json
+   {
+     "devDependencies": {
+       "happy-dom": "^19.0.2",
+       ...
+     }
+   }
+   ```
+
+2. **`vitest.config.ts`** - 切换测试环境
+   ```diff
+   export default defineConfig({
+     test: {
+   -   environment: 'jsdom',
+   -   setupFiles: ['./vitest.setup.ts'],
+   +   environment: 'happy-dom',
+       globals: true,
+     },
+     ...
+   });
+   ```
+
+3. **`vitest.setup.ts`** - 不再需要（可删除或保留备用）
+
+### 验证结果
+
+**本地测试：**
+```bash
+npm run test -- --run
+
+✓ tests/lib/scheduler/compute.test.ts  (4 tests) 6ms
+✓ tests/ui/start-input-today.test.tsx  (1 test) 192ms
+✓ tests/ui/pure-input-blur-commit-today.test.tsx  (2 tests) 373ms
+✓ tests/ui/loose-time-templates.test.tsx  (1 test) 173ms
+✓ tests/ui/start-input-templates.test.tsx  (1 test) 158ms
+✓ tests/ui/wake-start-input-templates.test.tsx  (1 test) 163ms
+✓ tests/ui/loose-time-today.test.tsx  (1 test) 158ms
+✓ tests/smoke.test.ts  (1 test) 3ms
+✓ tests/ui/wake-start-input-today.test.tsx  (1 test) 147ms
+
+Test Files  9 passed (9)
+     Tests  13 passed (13)
+  Duration  4.23s
+```
+
+**CI 构建：**
+```
+✓ Type Check (tsc)
+✓ Unit Tests (Vitest)
+✓ Build (Next.js)
+
+Status: completed success
+Duration: 1m10s
+```
+
+### 技术对比：jsdom vs happy-dom
+
+| 特性 | jsdom | happy-dom |
+|------|-------|-----------|
+| Node.js 兼容性 | 需要手动 polyfills | 原生兼容，无需 polyfills |
+| 启动速度 | 较慢（复杂依赖链） | 快速（轻量实现） |
+| 内存占用 | 较高 | 较低 |
+| Web API 覆盖 | 全面（接近真实浏览器） | 足够测试使用 |
+| 维护成本 | 高（需处理 polyfill） | 低（开箱即用） |
+| 适用场景 | 需要完整浏览器环境模拟 | 单元/集成测试（推荐） |
+
+### 遵循的设计原则
+
+1. **KISS (Keep It Simple, Stupid)**
+   - 从复杂的 polyfill 方案切换到开箱即用的 happy-dom
+   - 移除了 `vitest.setup.ts` 的配置复杂度
+
+2. **YAGNI (You Aren't Gonna Need It)**
+   - 不需要完整的浏览器环境模拟（jsdom 提供的）
+   - 只需要足够的 DOM API 来运行测试
+
+3. **性能优先**
+   - happy-dom 启动更快，测试执行更快
+   - 减少 CI 运行时间
+
+### 相关提交
+
+- `80e38eb` - feat(today): 单元格点击即聚焦（输入框修复）
+- `4a077ae` - fix(input/start): 允许编辑"开始"列（非受控组件）
+- `[commit]` - fix(test): 添加 jsdom polyfills（失败尝试）
+- `a375b03` - fix(test): 改进 jsdom polyfills 使用 Object.assign（依然失败）
+- `a3c166a` - fix(test): 使用 happy-dom 替代 jsdom（最终成功）✅
+
+### 后续建议
+
+1. ✅ 已更新 `AGENTS.md` 测试规范章节，说明使用 happy-dom
+2. ✅ CI 配置无需修改（`.github/workflows/ci.yml`）
+3. 🔄 可考虑删除 `vitest.setup.ts`（已不再使用）
+4. 📚 团队成员应了解：本项目测试环境使用 happy-dom，而非 jsdom

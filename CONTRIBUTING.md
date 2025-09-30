@@ -9,6 +9,7 @@
   - `cp .env.example .env`
   - `npm run db:setup`（= `prisma generate && prisma migrate dev`）
 - 启动：`npm run dev`（含预检脚本 `scripts/preflight.mjs`）
+- 测试环境：Vitest + happy-dom（轻量 DOM 环境，无需 polyfills）
 
 ## Git 工作流
 - 分支命名：
@@ -60,6 +61,7 @@
 
 ## 常用命令
 - 构建：`npm run build`
+- 测试：`npm run test`（watch 模式）或 `npm run test -- --run`（单次运行）
 - 预检：随 dev/build/start 自动执行，检查 `.env`、Prisma Client、SQLite 文件
 - 迁移：
   - 创建并应用：`npm run prisma:migrate -- --name <name>`
