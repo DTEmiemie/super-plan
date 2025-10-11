@@ -89,12 +89,12 @@ export function sampleTemplate(): ScheduleTemplate {
     wakeStart: '07:00',
     totalHours: 17,
     slots: [
-      { id: crypto.randomUUID(), title: '早餐与新闻', desiredMin: 20, rigid: false },
-      { id: crypto.randomUUID(), title: '增量阅读', desiredMin: 100, rigid: false },
-      { id: crypto.randomUUID(), title: '工作：专注编程', desiredMin: 240, rigid: false },
-      { id: crypto.randomUUID(), title: '运动：慢跑', desiredMin: 60, rigid: false },
-      { id: crypto.randomUUID(), title: '家庭/陪伴', desiredMin: 240, rigid: false },
-      { id: crypto.randomUUID(), title: '晚间阅读', desiredMin: 45, rigid: false }
+      { id: 'slot-1', title: '早餐与新闻', desiredMin: 20, rigid: false },
+      { id: 'slot-2', title: '增量阅读', desiredMin: 100, rigid: false },
+      { id: 'slot-3', title: '工作：专注编程', desiredMin: 240, rigid: false },
+      { id: 'slot-4', title: '运动：慢跑', desiredMin: 60, rigid: false },
+      { id: 'slot-5', title: '家庭/陪伴', desiredMin: 240, rigid: false },
+      { id: 'slot-6', title: '晚间阅读', desiredMin: 45, rigid: false }
     ],
   };
 }

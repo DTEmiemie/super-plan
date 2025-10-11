@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>输入框调试测试</title>
+    <style>
+        .debug-container {
+            max-width: 800px;
+            margin: 20px auto;
+            font-family: sans-serif;
+        }
+        .input-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .input-test {
+            border: 1px solid #ddd;
+            padding: 8px;
+            border-radius: 4px;
+            width: 100px;
+            text-align: center;
+        }
+        .debug-info {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .state-display {
+            background: #e3f2fd;
+            padding: 5px;
+            margin: 5px 0;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="debug-container">
+        <h2>输入框编辑状态调试</h2>
+        
+        <div class="debug-info">
+            <div>当前编辑状态: <span id="editing-status">false</span></div>
+            <div>草稿状态: <span id="draft-status">{}</span></div>
+            <div>事件日志: <div id="event-log"></div></div>
+        </div>
+
+        <div class="input-row">
+            <label>开始时间测试:</label>
+            <input 
+                type="text" 
+                class="input-test" 
+                id="start-input"
+                placeholder="09:30"
+                data-slot-id="test-slot-1"
+            />
+            <span id="start-value">-</span>
+        </div>
+
+        <div class="input-row">
+            <label>期望时间测试:</label>
+            <input 
+                type="number" 
+                class="input-test" 
+                id="min-input"
+                placeholder="30"
+                data-slot-id="test-slot-1"
+            />
+            <span id="min-value">-</span>
+        </div>
+
+        <div class="input-row">
+            <button onclick="resetStates()">重置所有状态</button>
+            <button onclick="clearLog()">清空日志</button>
+            <button onclick="forceEnable()">强制启用输入框</button>
+        </div>
+    </div>
+
+    <script>
+        // 模拟React的状态管理
+        let editing = false;
+        let fixedDraft = {};
+        let minDraft = {};
+        let eventCount = 0;
+
+        function log(message) {
+            eventCount++;
+            const logDiv = document.getElementById('event-log');
+            const entry = document.createElement('div');
+            entry.textContent = `${eventCount}: ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            updateDisplay();
+        }
+
+        function updateDisplay() {
+            document.getElementById('editing-status').textContent = editing;
+            document.getElementById('draft-status').textContent = JSON.stringify({fixedDraft, minDraft});
+        }
+
+        function resetStates() {
+            editing = false;
+            fixedDraft = {};
+            minDraft = {};
+            log('重置所有状态');
+            updateDisplay();
+        }
+
+        function clearLog() {
+            document.getElementById('event-log').innerHTML = '';
+            eventCount = 0;
+        }
+
+        function forceEnable() {
+            const startInput = document.getElementById('start-input');
+            const minInput = document.getElementById('min-input');
+            
+            startInput.disabled = false;
+            minInput.disabled = false;
+            startInput.style.pointerEvents = 'auto';
+            minInput.style.pointerEvents = 'auto';
+            startInput.style.opacity = '1';
+            minInput.style.opacity = '1';
+            
+            log('强制启用所有输入框');
+        }
+
+        // 开始时间输入框事件处理
+        const startInput = document.getElementById('start-input');
+        
+        startInput.addEventListener('focus', function(e) {
+            log(`开始输入框 onFocus - 当前值: "${e.target.value}"`);
+            editing = true;
+            const slotId = e.target.dataset.slotId;
+            fixedDraft[slotId] = e.target.value || '';
+            updateDisplay();
+        });
+
+        startInput.addEventListener('change', function(e) {
+            log(`开始输入框 onChange - 新值: "${e.target.value}"`);
+            const slotId = e.target.dataset.slotId;
+            fixedDraft[slotId] = e.target.value;
+            document.getElementById('start-value').textContent = e.target.value;
+            updateDisplay();
+        });
+
+        startInput.addEventListener('blur', function(e) {
+            log(`开始输入框 onBlur - 最终值: "${e.target.value}"`);
+            editing = false;
+            const slotId = e.target.dataset.slotId;
+            
+            if (fixedDraft[slotId]) {
+                log(`保存草稿: ${fixedDraft[slotId]}`);
+            } else {
+                log(`清空草稿`);
+            }
+            
+            // 模拟延迟清理
+            setTimeout(() => {
+                delete fixedDraft[slotId];
+                updateDisplay();
+                log(`草稿已清理`);
+            }, 100);
+            updateDisplay();
+        });
+
+        // 期望时间输入框事件处理
+        const minInput = document.getElementById('min-input');
+        
+        minInput.addEventListener('focus', function(e) {
+            log(`期望输入框 onFocus - 当前值: "${e.target.value}"`);
+            editing = true;
+            const slotId = e.target.dataset.slotId;
+            minDraft[slotId] = e.target.value || '';
+            updateDisplay();
+        });
+
+        minInput.addEventListener('change', function(e) {
+            log(`期望输入框 onChange - 新值: "${e.target.value}"`);
+            const slotId = e.target.dataset.slotId;
+            minDraft[slotId] = e.target.value;
+            document.getElementById('min-value').textContent = e.target.value;
+            updateDisplay();
+        });
+
+        minInput.addEventListener('blur', function(e) {
+            log(`期望输入框 onBlur - 最终值: "${e.target.value}"`);
+            editing = false;
+            const slotId = e.target.dataset.slotId;
+            
+            const nextNum = Math.max(0, parseInt(e.target.value || '0', 10) || 0);
+            log(`处理期望值: ${nextNum}`);
+            
+            delete minDraft[slotId];
+            updateDisplay();
+        });
+
+        // 检测输入框状态变化
+        setInterval(() => {
+            const startDisabled = startInput.disabled;
+            const minDisabled = minInput.disabled;
+            const startPointerEvents = getComputedStyle(startInput).pointerEvents;
+            const minPointerEvents = getComputedStyle(minInput).pointerEvents;
+            
+            if (startDisabled || minDisabled || startPointerEvents === 'none' || minPointerEvents === 'none') {
+                log(`🚨 检测到输入框异常状态: start disabled=${startDisabled}, min disabled=${minDisabled}, start pointer-events=${startPointerEvents}, min pointer-events=${minPointerEvents}`);
+            }
+        }, 1000);
+
+        // 初始化
+        updateDisplay();
+        log('调试页面已初始化');
+    </script>
+</body>
+</html>
